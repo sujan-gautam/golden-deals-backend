@@ -82,24 +82,43 @@ const getUserById = asyncHandler(async (req, res) => {
 
 //@desc: Create New User
 //@api: API/USERS
-//@method: post,private
+//@method: post, private
 const createUser = asyncHandler(async (req, res) => {
+  console.log('Request body:', req.body); // Debug log
   const { username, firstname, lastname, email, password, confirm_password } = req.body;
+
+  // Validate required fields
   if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
-    res.status(400).json({ message: "All fields are mandatory!" });
+    console.log('Validation failed:', {
+      username: !username,
+      firstname: !firstname,
+      lastname: !lastname,
+      email: !email,
+      password: !password,
+      confirm_password: !confirm_password,
+    });
+    return res.status(400).json({ message: "All fields are mandatory!" });
   }
+
+  // Check for existing username and email
   const registeredEmail = await Users.findOne({ email });
   const registeredUsername = await Users.findOne({ username });
   if (registeredUsername) {
-    res.status(400).json({ message: "Username already used. Try another one!" });
+    return res.status(400).json({ message: "Username already used. Try another one!" });
   }
   if (registeredEmail) {
-    res.status(400).json({ message: "Email already in use." });
+    return res.status(400).json({ message: "Email already in use." });
   }
+
+  // Validate password match
   if (password !== confirm_password) {
-    res.status(400).json({ message: "Password should match!" });
+    return res.status(400).json({ message: "Password should match!" });
   }
+
+  // Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Create user
   const user = await Users.create({
     username,
     firstname,
@@ -107,10 +126,21 @@ const createUser = asyncHandler(async (req, res) => {
     email,
     password: hashedPassword,
   });
+
   if (!user) {
-    res.status(400).json({ message: "Can't create user!" });
+    return res.status(400).json({ message: "Can't create user!" });
   }
-  res.status(200).json(user);
+
+  return res.status(201).json({
+    message: "User created successfully",
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      firstname: user.firstname,
+      lastname: user.lastname,
+    },
+  });
 });
 
 //@desc: Verify Token
