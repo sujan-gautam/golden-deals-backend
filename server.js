@@ -50,7 +50,7 @@ initializeSocket(server, app);
 // Middleware
 app.use(express.json());
 app.use(cors({
-  origin: process.env.FRONTEND_APP_URL, // Restrict to frontend origin in development
+  origin: process.env.FRONTEND_APP_URL ||'https://golden-deals.vercel.app', // Restrict to frontend origin in development
   credentials: true, // If you're using cookies/auth headers
 }));
 
