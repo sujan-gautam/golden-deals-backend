@@ -41,6 +41,7 @@ require('./config/passport')();
 
 
 const app = express();
+app.use(express.urlencoded({ extended: true }));
 const server = http.createServer(app); // Create HTTP server instance
 
 // Initialize Socket.IO with the same server instance
