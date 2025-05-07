@@ -52,6 +52,8 @@ app.use(express.json());
 app.use(cors({
   origin: process.env.FRONTEND_APP_URL ||'https://golden-deals.vercel.app', // Restrict to frontend origin in development
   credentials: true, // If you're using cookies/auth headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed methods
+  allowedHeaders: ['Content-Type', 'x-api-key', 'session_logininfo'],
 }));
 
 // Serve static files from specific subdirectories
