@@ -83,48 +83,37 @@ const getUserById = asyncHandler(async (req, res) => {
 //@desc: Create New User
 //@api: API/USERS
 //@method: post, private
-const createUser = async (req, res) => {
-  try {
-    console.log('Raw Request Headers:', req.headers);
-    console.log('Raw Request Body:', req.body);
-
-    const { username, firstname, lastname, email, password, confirm_password } = req.body;
-
-    // Check if all fields are present
-    if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
-
-    // Password match check
-    if (password !== confirm_password) {
-      return res.status(400).json({ message: 'Passwords do not match' });
-    }
-
-    // Check if user already exists
-    const userExists = await Users.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
-
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create new user
-    const user = await Users.create({
-      username,
-      firstname,
-      lastname,
-      email,
-      password: hashedPassword
-    });
-
-    res.status(201).json({ message: 'User created successfully', user });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ message: 'Internal server error', error: error.message });
+const createUser = asyncHandler(async (req, res) => {
+  const { username, firstname, lastname, email, password, confirm_password } = req.body;
+  if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
+    res.status(400).json({ message: "All fields are mandatory!" });
   }
-};
+  const registeredEmail = await Users.findOne({ email });
+  const registeredUsername = await Users.findOne({ username });
+  if (registeredUsername) {
+    res.status(400).json({ message: "Username already used. Try another one!" });
+  }
+  if (registeredEmail) {
+    res.status(400).json({ message: "Email already in use." });
+  }
+  if (password !== confirm_password) {
+    res.status(400).json({ message: "Password should match!" });
+  }
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const user = await Users.create({
+    username,
+    firstname,
+    lastname,
+    email,
+    password: hashedPassword,
+  });
+  if (!user) {
+    res.status(400).json({ message: "Can't create user!" });
+  }
+  res.status(200).json(user);
+});
+
+
 //@desc: Verify Token
 //@api: API/USERS/VERIFY-TOKEN
 //@method: get, private
