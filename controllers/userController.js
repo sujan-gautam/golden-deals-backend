@@ -83,66 +83,48 @@ const getUserById = asyncHandler(async (req, res) => {
 //@desc: Create New User
 //@api: API/USERS
 //@method: post, private
-const createUser = asyncHandler(async (req, res) => {
-  console.log('Request body:', req.body); // Debug log
-  const { username, firstname, lastname, email, password, confirm_password } = req.body;
+const createUser = async (req, res) => {
+  try {
+    console.log('Raw Request Headers:', req.headers);
+    console.log('Raw Request Body:', req.body);
 
-  // Validate required fields
-  if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
-    console.log('Validation failed:', {
-      username: !username,
-      firstname: !firstname,
-      lastname: !lastname,
-      email: !email,
-      password: !password,
-      confirm_password: !confirm_password,
+    const { username, firstname, lastname, email, password, confirm_password } = req.body;
+
+    // Check if all fields are present
+    if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Password match check
+    if (password !== confirm_password) {
+      return res.status(400).json({ message: 'Passwords do not match' });
+    }
+
+    // Check if user already exists
+    const userExists = await Users.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create new user
+    const user = await Users.create({
+      username,
+      firstname,
+      lastname,
+      email,
+      password: hashedPassword
     });
-    return res.status(400).json({ message: "All fields are mandatory!" });
+
+    res.status(201).json({ message: 'User created successfully', user });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
-
-  // Check for existing username and email
-  const registeredEmail = await Users.findOne({ email });
-  const registeredUsername = await Users.findOne({ username });
-  if (registeredUsername) {
-    return res.status(400).json({ message: "Username already used. Try another one!" });
-  }
-  if (registeredEmail) {
-    return res.status(400).json({ message: "Email already in use." });
-  }
-
-  // Validate password match
-  if (password !== confirm_password) {
-    return res.status(400).json({ message: "Password should match!" });
-  }
-
-  // Hash password
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  // Create user
-  const user = await Users.create({
-    username,
-    firstname,
-    lastname,
-    email,
-    password: hashedPassword,
-  });
-
-  if (!user) {
-    return res.status(400).json({ message: "Can't create user!" });
-  }
-
-  return res.status(201).json({
-    message: "User created successfully",
-    user: {
-      id: user._id,
-      username: user.username,
-      email: user.email,
-      firstname: user.firstname,
-      lastname: user.lastname,
-    },
-  });
-});
-
+};
 //@desc: Verify Token
 //@api: API/USERS/VERIFY-TOKEN
 //@method: get, private
