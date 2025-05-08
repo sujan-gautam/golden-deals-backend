@@ -160,32 +160,18 @@ const verifyLoginToken = asyncHandler(async (req, res) => {
 //@method: post,private
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-
-  // Validate input
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required." });
-  }
-
-  // Find user and explicitly include password field
-  const verifiedEmail = await Users.findOne({ email }).select('+password');
+  const verifiedEmail = await Users.findOne({ email });
 
   if (!verifiedEmail) {
-    return res.status(400).json({ message: "No user with this email found." });
+    return res.status(400).json({ message: "No users with this email found." });
   }
 
-  // Check if password field exists in the database
-  if (!verifiedEmail.password) {
-    return res.status(500).json({ message: "User account has no password set. Contact support." });
-  }
-
-  // Compare passwords
   const isPasswordValid = await bcrypt.compare(password, verifiedEmail.password);
 
   if (!isPasswordValid) {
-    return res.status(400).json({ message: "Email or password incorrect." });
+    return res.status(400).json({ message: "Email or Password Incorrect." });
   }
 
-  // Generate JWT
   const accessToken = jwt.sign(
     {
       user: {
@@ -195,13 +181,12 @@ const loginUser = asyncHandler(async (req, res) => {
         id: verifiedEmail.id,
       },
     },
-    process.env.SECRECT_KEY, // Note: Fix typo in environment variable (should be SECRET_KEY)
+    process.env.SECRECT_KEY,
     { expiresIn: "7d" }
   );
 
-  return res.status(200).json({ accesstoken: accessToken });
+  res.status(200).json({ accesstoken: accessToken });
 });
-
 //@desc: Get current user
 //@api: API/CURRENT
 //@method: get, private
