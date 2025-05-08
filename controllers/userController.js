@@ -160,20 +160,14 @@ const verifyLoginToken = asyncHandler(async (req, res) => {
 //@method: post,private
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const verifiedEmail = await Users.findOne({ email });
 
-  console.log("Login email:", email);
-  console.log("Login password:", password);
+  const user = await Users.findOne({ email });
 
-  if (!verifiedEmail) {
+  if (!user) {
     return res.status(400).json({ message: "No users with this email found." });
   }
 
-  console.log("Stored hash:", verifiedEmail.password);
-
-  const isPasswordValid = await bcrypt.compare(password, verifiedEmail.password);
-
-  console.log("Password valid?", isPasswordValid);
+  const isPasswordValid = await bcrypt.compare(password, user.password); // Compare plain password with hash
 
   if (!isPasswordValid) {
     return res.status(400).json({ message: "Email or Password Incorrect." });
@@ -182,13 +176,13 @@ const loginUser = asyncHandler(async (req, res) => {
   const accessToken = jwt.sign(
     {
       user: {
-        username: verifiedEmail.username,
-        firstname: verifiedEmail.firstname,
-        lastname: verifiedEmail.lastname,
-        id: verifiedEmail.id,
+        username: user.username,
+        firstname: user.firstname,
+        lastname: user.lastname,
+        id: user._id,
       },
     },
-    process.env.SECRECT_KEY,
+    process.env.SECRECT_KEY, // JWT secret key
     { expiresIn: "7d" }
   );
 
