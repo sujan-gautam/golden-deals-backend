@@ -83,7 +83,7 @@ app.use(passport.session());
 
 // Routes
 app.use('/api/products', trustedClient, productRoutes);
-app.use('/api/users', trustedClient, userRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/posts', trustedClient, postRoutes);
 app.use('/api/events', trustedClient, eventRoutes);
 app.use('/api/feed', trustedClient, feedRoutes);
