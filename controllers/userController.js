@@ -162,11 +162,18 @@ const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const verifiedEmail = await Users.findOne({ email });
 
+  console.log("Login email:", email);
+  console.log("Login password:", password);
+
   if (!verifiedEmail) {
     return res.status(400).json({ message: "No users with this email found." });
   }
 
+  console.log("Stored hash:", verifiedEmail.password);
+
   const isPasswordValid = await bcrypt.compare(password, verifiedEmail.password);
+
+  console.log("Password valid?", isPasswordValid);
 
   if (!isPasswordValid) {
     return res.status(400).json({ message: "Email or Password Incorrect." });
@@ -187,6 +194,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
   res.status(200).json({ accesstoken: accessToken });
 });
+
 //@desc: Get current user
 //@api: API/CURRENT
 //@method: get, private
