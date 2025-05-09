@@ -50,11 +50,17 @@ initializeSocket(server, app);
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_APP_URL ||'https://golden-deals.vercel.app', // Restrict to frontend origin in development
-  credentials: true, // If you're using cookies/auth headers
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed methods
+  origin: [
+    process.env.FRONTEND_APP_URL || 'https://golden-deals.vercel.app', 
+    'https://golden-deals.vercel.app', 
+    'https://golden-deals-frontend-production.up.railway.app',
+    'http://localhost:5173' // Optional: for local dev
+  ],
+  credentials: true, // Allow cookies/auth headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'session_logininfo'],
 }));
+
 
 // Serve static files from specific subdirectories
 app.use('/storage/posts-pictures', express.static(path.join(__dirname, 'storage/posts-pictures')));
