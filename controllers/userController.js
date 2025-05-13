@@ -162,7 +162,7 @@ const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
   // Find user by email
-  const user = await Users.findOne({ email });
+  const user = await Users.findOne({ email }).select('+password');
 
   if (!user) {
     return res.status(400).json({ message: "No users with this email found." });
