@@ -82,7 +82,7 @@ const getUserById = asyncHandler(async (req, res) => {
 
 //@desc: Create New User
 //@api: API/USERS
-//@method: post,private
+//@method: post, private
 const createUser = asyncHandler(async (req, res) => {
   const { username, firstname, lastname, email, password, confirm_password } = req.body;
   if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
@@ -112,6 +112,7 @@ const createUser = asyncHandler(async (req, res) => {
   }
   res.status(200).json(user);
 });
+
 
 //@desc: Verify Token
 //@api: API/USERS/VERIFY-TOKEN
@@ -159,28 +160,36 @@ const verifyLoginToken = asyncHandler(async (req, res) => {
 //@method: post,private
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const verifiedEmail = await Users.findOne({ email });
 
-  if (!verifiedEmail) {
+  // Find user by email
+  const user = await Users.findOne({ email }).select('+password');
+
+  if (!user) {
     return res.status(400).json({ message: "No users with this email found." });
   }
 
-  const isPasswordValid = await bcrypt.compare(password, verifiedEmail.password);
+  // Log the hashed password from DB and input password
+  console.log("Stored hashed password:", user.password);
+  console.log("Login password:", password);
+
+  // Check if entered password matches hashed password
+  const isPasswordValid = await bcrypt.compare(password, user.password);
 
   if (!isPasswordValid) {
     return res.status(400).json({ message: "Email or Password Incorrect." });
   }
 
+  // Generate JWT if password is valid
   const accessToken = jwt.sign(
     {
       user: {
-        username: verifiedEmail.username,
-        firstname: verifiedEmail.firstname,
-        lastname: verifiedEmail.lastname,
-        id: verifiedEmail.id,
+        username: user.username,
+        firstname: user.firstname,
+        lastname: user.lastname,
+        id: user._id,
       },
     },
-    process.env.SECRECT_KEY,
+    process.env.SECRECT_KEY, // Use your secret key here
     { expiresIn: "7d" }
   );
 

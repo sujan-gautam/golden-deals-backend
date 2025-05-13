@@ -41,17 +41,26 @@ require('./config/passport')();
 
 
 const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 const server = http.createServer(app); // Create HTTP server instance
 
 // Initialize Socket.IO with the same server instance
 initializeSocket(server, app);
 
 // Middleware
-app.use(express.json());
 app.use(cors({
-  origin: process.env.FRONTEND_APP_URL, // Restrict to frontend origin in development
-  credentials: true, // If you're using cookies/auth headers
+  origin: [
+    process.env.FRONTEND_APP_URL || 'https://golden-deals.vercel.app', 
+    'https://golden-deals.vercel.app', 
+    'https://golden-deals-frontend-production.up.railway.app',
+    'http://localhost:5173' // Optional: for local dev
+  ],
+  credentials: true, // Allow cookies/auth headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-api-key', 'session_logininfo'],
 }));
+
 
 // Serve static files from specific subdirectories
 app.use('/storage/posts-pictures', express.static(path.join(__dirname, 'storage/posts-pictures')));
@@ -80,7 +89,7 @@ app.use(passport.session());
 
 // Routes
 app.use('/api/products', trustedClient, productRoutes);
-app.use('/api/users', trustedClient, userRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/posts', trustedClient, postRoutes);
 app.use('/api/events', trustedClient, eventRoutes);
 app.use('/api/feed', trustedClient, feedRoutes);
