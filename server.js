@@ -50,15 +50,10 @@ initializeSocket(server, app);
 
 // Middleware
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_APP_URL || 'https://golden-deals.vercel.app', 
-    'https://golden-deals.vercel.app', 
-    'https://golden-deals-frontend-production.up.railway.app',
-    'http://localhost:5173' // Optional: for local dev
-  ],
+  origin: process.env.FRONTEND_APP_URL || 'http://localhost:8080', // Fallback for safety
   credentials: true, // Allow cookies/auth headers
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-api-key', 'session_logininfo'],
+  allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization', 'session_logininfo'], // Add Authorization
 }));
 
 
@@ -100,7 +95,7 @@ app.use('/api/saved-items', trustedClient, savedItemRoutes);
 app.use('/api/search', trustedClient, searchRoutes);
 app.use('/api/auth',authRoutes);
 
-// Add this before your routes
+
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(500).json({

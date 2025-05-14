@@ -200,32 +200,19 @@ const loginUser = asyncHandler(async (req, res) => {
 //@api: API/CURRENT
 //@method: get, private
 const currentUser = asyncHandler(async (req, res) => {
-  try {
-    console.log("User from token:", req.user);
-    const user = await Users.findById(req.user.id).select('-password');
-
-    if (!user) {
-      console.log("User not found for ID:", req.user.id);
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.status(200).json({
-      id: user._id,
-      username: user.username,
-      firstname: user.firstname || '',
-      lastname: user.lastname || '',
-      email: user.email,
-      avatar: user.avatar || null,
-      isLoggedIn: true,
-      completedTasks: user.completedTasks || 0,
-      location: user.location,
-      website: user.website,
-      bio: user.bio,
-    });
-  } catch (error) {
-    console.error("Current user error:", error);
-    res.status(500).json({ message: "Server error fetching user" });
+  const user = await Users.findById(req.user.id).select('-password'); // Exclude sensitive fields
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
   }
+  res.status(200).json({
+    id: user._id,
+    username: user.username,
+    firstname: user.firstname,
+    lastname: user.lastname,
+    email: user.email,
+    avatar: user.avatar,
+  });
 });
 
 // @desc: Update user profile

@@ -30,12 +30,12 @@ router.get(
           id: user.id,
         },
       },
-      process.env.SECRET_KEY, // Make sure your env variable is correct
+      process.env.SECRECT_KEY, // Make sure your env variable is correct
       { expiresIn: '7d' }
     );
 
     // Ensure the frontend URL is correct
-    const frontendURL = process.env.FRONTEND_APP_URL || 'https://golden-deals.vercel.app';
+    const frontendURL = process.env.FRONTEND_APP_URL ;
     res.redirect(`${frontendURL}/auth/google/callback?token=${accessToken}`);
   })
 );
