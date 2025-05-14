@@ -94,6 +94,12 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/saved-items', trustedClient, savedItemRoutes);
 app.use('/api/search', trustedClient, searchRoutes);
 app.use('/api/auth',authRoutes);
+app.get('/', (req, res) => {
+  res.send('Server is up and running!');
+});
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
 
 
 app.use((err, req, res, next) => {
@@ -105,7 +111,8 @@ app.use((err, req, res, next) => {
 });
 
 // Start server with the unified HTTP server instance
+const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => { // Changed from app.listen to server.listen
+server.listen(PORT, HOST, () => {
   console.log(`App is running on port: ${PORT}`);
 });
