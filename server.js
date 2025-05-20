@@ -55,7 +55,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization', 'session_logininfo'], // Add Authorization
 }));
-
+app.options('*', cors());
 
 // Serve static files from specific subdirectories
 app.use('/storage/posts-pictures', express.static(path.join(__dirname, 'storage/posts-pictures')));
