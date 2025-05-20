@@ -52,7 +52,7 @@ initializeSocket(server, app);
 app.use(cors({
   origin: process.env.FRONTEND_APP_URL || 'http://localhost:8080', // Fallback for safety
   credentials: true, // Allow cookies/auth headers
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization', 'session_logininfo'], // Add Authorization
 }));
 app.options('*', cors());
