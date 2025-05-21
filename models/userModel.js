@@ -1,16 +1,15 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
-
 const userSchema = mongoose.Schema({
   username: {
     type: String,
-    required: [false, "Please enter your username"], // Optional field, no error if missing
+    required: [false, "Please enter your username"],
     unique: true,
   },
   email: {
     type: String,
-    required: [true, "Please enter your email"], // Fixed message to "email"
+    required: [true, "Please enter your email"],
     unique: true,
   },
   firstname: {
@@ -19,7 +18,7 @@ const userSchema = mongoose.Schema({
   },
   lastname: {
     type: String,
-    required: [false, "Please enter your lastname"], // Optional field
+    required: [false, "Please enter your lastname"],
   },
   password: {
     type: String,
@@ -28,11 +27,11 @@ const userSchema = mongoose.Schema({
   googleId: {
     type: String,
     unique: true,
-    sparse: true, // Allows null values while maintaining uniqueness
+    sparse: true,
   },
   avatar: {
     type: String,
-    default: null, // Matches postController expectation
+    default: null,
   },
   location: {
     type: String,
@@ -40,23 +39,27 @@ const userSchema = mongoose.Schema({
   },
   website: {
     type: String,
-    required: false, // No required message needed since it's optional
+    required: false,
   },
   bio: {
     type: String,
-    required: false, // No required message needed since it's optional
+    required: false,
   },
 }, {
   timestamps: true,
 });
+
 userSchema.pre('save', async function (next) {
-  if (this.isModified('password') && this.password) {
+  if (this.isModified('password') && this.password && !this.password.startsWith('$2b$')) {
+    console.log('Pre-save hook: Hashing password');
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
+    console.log('Pre-save hook: Hashed password:', this.password);
+  } else {
+    console.log('Pre-save hook: Skipping hashing (password already hashed or unchanged)');
   }
   next();
 });
-// Register the model with name 'User' (capitalized to match ref in other models)
-const User = mongoose.model('User', userSchema);
 
+const User = mongoose.model('User', userSchema);
 module.exports = User;
