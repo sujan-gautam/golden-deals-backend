@@ -93,6 +93,11 @@ const createUser = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "All fields are mandatory!" });
   }
 
+  if (password.startsWith('$2b$')) {
+    console.log('Invalid password format: Password appears to be a hash');
+    return res.status(400).json({ message: "Password must be plaintext, not a hash." });
+  }
+
   const normalizedEmail = email.toLowerCase();
   const registeredEmail = await Users.findOne({ email: normalizedEmail });
   const registeredUsername = await Users.findOne({ username });
