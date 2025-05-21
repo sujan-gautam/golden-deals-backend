@@ -85,34 +85,50 @@ const getUserById = asyncHandler(async (req, res) => {
 //@method: post, private
 const createUser = asyncHandler(async (req, res) => {
   const { username, firstname, lastname, email, password, confirm_password } = req.body;
+
+  console.log('Register request received:', { username, email, password });
+
   if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
-    res.status(400).json({ message: "All fields are mandatory!" });
+    console.log('Missing required fields');
+    return res.status(400).json({ message: "All fields are mandatory!" });
   }
-  const registeredEmail = await Users.findOne({ email });
+
+  const normalizedEmail = email.toLowerCase();
+  const registeredEmail = await Users.findOne({ email: normalizedEmail });
   const registeredUsername = await Users.findOne({ username });
+
   if (registeredUsername) {
-    res.status(400).json({ message: "Username already used. Try another one!" });
+    console.log('Username already taken:', username);
+    return res.status(400).json({ message: "Username already used. Try another one!" });
   }
   if (registeredEmail) {
-    res.status(400).json({ message: "Email already in use." });
+    console.log('Email already in use:', normalizedEmail);
+    return res.status(400).json({ message: "Email already in use." });
   }
   if (password !== confirm_password) {
-    res.status(400).json({ message: "Password should match!" });
+    console.log('Password mismatch');
+    return res.status(400).json({ message: "Password should match!" });
   }
+
   const hashedPassword = await bcrypt.hash(password, 10);
+  console.log('Generated hashed password:', hashedPassword);
+
   const user = await Users.create({
     username,
     firstname,
     lastname,
-    email,
+    email: normalizedEmail,
     password: hashedPassword,
   });
-  if (!user) {
-    res.status(400).json({ message: "Can't create user!" });
-  }
-  res.status(200).json(user);
-});
 
+  if (!user) {
+    console.log('Failed to create user');
+    return res.status(400).json({ message: "Can't create user!" });
+  }
+
+  console.log('User created successfully:', user._id);
+  res.status(201).json(user);
+});
 
 //@desc: Verify Token
 //@api: API/USERS/VERIFY-TOKEN
@@ -161,25 +177,32 @@ const verifyLoginToken = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // Find user by email
-  const user = await Users.findOne({ email }).select('+password');
+  console.log('Login request received:', { email, password });
 
+  if (!email || !password) {
+    console.log('Missing email or password');
+    return res.status(400).json({ message: "Email and password are required." });
+  }
+
+  const normalizedEmail = email.toLowerCase();
+  console.log('Normalized email:', normalizedEmail);
+
+  const user = await Users.findOne({ email: normalizedEmail }).select('+password');
   if (!user) {
+    console.log('No user found for email:', normalizedEmail);
     return res.status(400).json({ message: "No users with this email found." });
   }
 
-  // Log the hashed password from DB and input password
-  console.log("Stored hashed password:", user.password);
-  console.log("Login password:", password);
+  console.log('Found user:', { id: user._id, email: user.email, passwordHash: user.password });
 
-  // Check if entered password matches hashed password
   const isPasswordValid = await bcrypt.compare(password, user.password);
+  console.log('Password comparison result:', isPasswordValid);
 
   if (!isPasswordValid) {
+    console.log('Password mismatch for user:', normalizedEmail);
     return res.status(400).json({ message: "Email or Password Incorrect." });
   }
 
-  // Generate JWT if password is valid
   const accessToken = jwt.sign(
     {
       user: {
@@ -189,11 +212,23 @@ const loginUser = asyncHandler(async (req, res) => {
         id: user._id,
       },
     },
-    process.env.SECRECT_KEY, // Use your secret key here
+    process.env.SECRECT_KEY,
     { expiresIn: "7d" }
   );
 
-  res.status(200).json({ accesstoken: accessToken });
+  console.log('Login successful, token generated for user:', user._id);
+
+  res.status(200).json({
+    accesstoken: accessToken,
+    user: {
+      id: user._id,
+      username: user.username,
+      firstname: user.firstname,
+      lastname: user.lastname,
+      email: user.email,
+      avatar: user.avatar,
+    },
+  });
 });
 
 //@desc: Get current user
