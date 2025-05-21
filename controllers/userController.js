@@ -118,7 +118,7 @@ const createUser = asyncHandler(async (req, res) => {
   const hashedPassword = await bcrypt.hash(password, 10);
   console.log('Generated hashed password:', hashedPassword);
 
-  const user = await Users.create({
+  const user = new Users({
     username,
     firstname,
     lastname,
@@ -126,15 +126,23 @@ const createUser = asyncHandler(async (req, res) => {
     password: hashedPassword,
   });
 
+  await user.save();
+  console.log('User saved with password:', user.password);
+
   if (!user) {
     console.log('Failed to create user');
     return res.status(400).json({ message: "Can't create user!" });
   }
 
   console.log('User created successfully:', user._id);
-  res.status(201).json(user);
+  res.status(201).json({
+    _id: user._id,
+    username: user.username,
+    firstname: user.firstname,
+    lastname: user.lastname,
+    email: user.email,
+  });
 });
-
 //@desc: Verify Token
 //@api: API/USERS/VERIFY-TOKEN
 //@method: get, private
