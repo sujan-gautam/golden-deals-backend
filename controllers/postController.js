@@ -7,11 +7,9 @@ const Notification = require('../models/notificationModel');
 // @route   GET /api/posts/all
 // @access  Private
 const getAllPosts = asyncHandler(async (req, res) => {
-  console.log("Fetching all posts...");
   const posts = await Post.find()
   .populate('user_id', 'name avatar username') 
     .populate('comments.user_id', 'name avatar'); 
-  console.log("Posts fetched:", posts.length);
   if (posts.length === 0) {
     return res.status(404).json({ message: "No posts found." });
   }
@@ -37,9 +35,6 @@ const getPosts = asyncHandler(async (req, res) => {
 const createPost = asyncHandler(async (req, res) => {
   const user_id = req.user.id;
 
-  console.log('req.body:', req.body);
-  console.log('req.file:', req.file);
-  console.log('Content-Type:', req.get('Content-Type'));
 
   let content;
   if (req.is('multipart/form-data') || req.is('application/json')) {
@@ -80,7 +75,6 @@ const createPost = asyncHandler(async (req, res) => {
 // @route   GET /api/posts/:id
 // @access  Private
 const getPostById = asyncHandler(async (req, res) => {
-  console.log(`Fetching post with ID: ${req.params.id}`);
   const post = await Post.findById(req.params.id);
 
   if (!post) {
@@ -88,13 +82,11 @@ const getPostById = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Post not found" });
   }
 
-  console.log('Post before population:', post);
 
   const populatedPost = await Post.findById(req.params.id)
     .populate('user_id', 'name avatar username')
     .populate('comments.user_id', 'name avatar username'); // Add username
 
-  console.log('Post after population:', populatedPost);
 
   res.status(200).json({
     message: "Post retrieved successfully",
@@ -205,10 +197,6 @@ const likePost = asyncHandler(async (req, res) => {
 // @access  Private
 // postController.js
 const commentOnPost = asyncHandler(async (req, res) => {
-  console.log('Request body:', req.body);
-  console.log('User:', req.user);
-  console.log('Post ID:', req.params.id);
-
   const { content, parentId, mentions } = req.body;
   if (!content) {
     return res.status(400).json({ message: 'Comment content is required' });
@@ -282,7 +270,6 @@ const likeComment = asyncHandler(async (req, res) => {
   const { postId, commentId } = req.params;
   const userId = req.user.id;
 
-  console.log('Like comment request:', { postId, commentId, userId });
 
   if (!mongoose.Types.ObjectId.isValid(postId) || !mongoose.Types.ObjectId.isValid(commentId)) {
     console.log('Invalid postId or commentId:', { postId, commentId });
