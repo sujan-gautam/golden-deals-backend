@@ -248,7 +248,7 @@ const loginUser = asyncHandler(async (req, res) => {
 //@api: API/CURRENT
 //@method: get, private
 const currentUser = asyncHandler(async (req, res) => {
-  const user = await Users.findById(req.user.id).select('-password'); // Exclude sensitive fields
+  const user = await Users.findById(req.user.id).select('-password');
   if (!user) {
     res.status(404);
     throw new Error('User not found');
@@ -260,6 +260,11 @@ const currentUser = asyncHandler(async (req, res) => {
     lastname: user.lastname,
     email: user.email,
     avatar: user.avatar,
+    bio: user.bio || '',
+    location: user.location || '',
+    website: user.website || '',
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
   });
 });
 
