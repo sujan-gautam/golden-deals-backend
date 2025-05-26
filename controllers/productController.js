@@ -89,8 +89,6 @@ const updateProduct = asyncHandler(async (req, res) => {
     const productUserId = product.user_id._id.toString(); // From populated user_id
     const requestingUserId = req.user.id.toString();
   
-    console.log('Product user_id:', productUserId); // Debug
-    console.log('Requesting user_id:', requestingUserId); // Debug
   
     if (productUserId !== requestingUserId) {
       return res.status(403).json({ message: "Not authorized to update this product" });
@@ -216,9 +214,6 @@ const shareProduct = asyncHandler(async (req, res) => {
 // @access  Private
 // productController.js
 const commentOnProduct = asyncHandler(async (req, res) => {
-  console.log('Request body:', req.body);
-  console.log('User:', req.user);
-  console.log('Product ID:', req.params.id);
 
   const { content, parentId, mentions } = req.body;
   if (!content) {
