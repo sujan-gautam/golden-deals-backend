@@ -100,7 +100,8 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
-app.get('/default-avatar.jpg', (req, res) => {
+
+app.get(process.env.DEFAULT_AVATAR_PATH || '/default-avatar.jpg', (req, res) => {
   const filePath = path.join(__dirname, 'public', 'default-avatar.jpg');
   res.sendFile(filePath, (err) => {
     if (err) {
