@@ -14,8 +14,6 @@ const getAllStories = asyncHandler(async (req, res) => {
 
 // Create a new story
 const createStory = asyncHandler(async (req, res) => {
-  console.log('Request body:', req.body);
-  console.log('Request file:', req.file);
 
   const user_id = req.user.id;
   const { text, textColor } = req.body;
@@ -43,7 +41,6 @@ const createStory = asyncHandler(async (req, res) => {
   }
 
   const populatedStory = await Story.findById(story._id).populate('user_id', 'name avatar username');
-  console.log('Story created:', populatedStory);
   res.status(201).json(populatedStory);
 });
 
