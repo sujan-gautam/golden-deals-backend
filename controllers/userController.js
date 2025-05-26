@@ -86,7 +86,6 @@ const getUserById = asyncHandler(async (req, res) => {
 const createUser = asyncHandler(async (req, res) => {
   const { username, firstname, lastname, email, password, confirm_password } = req.body;
 
-  console.log('Register request received:', { username, email, password });
 
   if (!username || !firstname || !lastname || !email || !password || !confirm_password) {
     console.log('Missing required fields');
@@ -94,7 +93,6 @@ const createUser = asyncHandler(async (req, res) => {
   }
 
   if (password.startsWith('$2b$')) {
-    console.log('Invalid password format: Password appears to be a hash');
     return res.status(400).json({ message: "Password must be plaintext, not a hash." });
   }
 
@@ -116,7 +114,6 @@ const createUser = asyncHandler(async (req, res) => {
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
-  console.log('Generated hashed password:', hashedPassword);
 
   const user = new Users({
     username,
@@ -127,14 +124,12 @@ const createUser = asyncHandler(async (req, res) => {
   });
 
   await user.save();
-  console.log('User saved with password:', user.password);
 
   if (!user) {
     console.log('Failed to create user');
     return res.status(400).json({ message: "Can't create user!" });
   }
 
-  console.log('User created successfully:', user._id);
   res.status(201).json({
     _id: user._id,
     username: user.username,
@@ -190,7 +185,6 @@ const verifyLoginToken = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  console.log('Login request received:', { email, password });
 
   if (!email || !password) {
     console.log('Missing email or password');
@@ -198,21 +192,16 @@ const loginUser = asyncHandler(async (req, res) => {
   }
 
   const normalizedEmail = email.toLowerCase();
-  console.log('Normalized email:', normalizedEmail);
 
   const user = await Users.findOne({ email: normalizedEmail }).select('+password');
   if (!user) {
-    console.log('No user found for email:', normalizedEmail);
     return res.status(400).json({ message: "No users with this email found." });
   }
 
-  console.log('Found user:', { id: user._id, email: user.email, passwordHash: user.password });
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
-  console.log('Password comparison result:', isPasswordValid);
 
   if (!isPasswordValid) {
-    console.log('Password mismatch for user:', normalizedEmail);
     return res.status(400).json({ message: "Email or Password Incorrect." });
   }
 
@@ -229,7 +218,6 @@ const loginUser = asyncHandler(async (req, res) => {
     { expiresIn: "7d" }
   );
 
-  console.log('Login successful, token generated for user:', user._id);
 
   res.status(200).json({
     accesstoken: accessToken,
@@ -302,8 +290,6 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
   }
 
   const avatarUrl = `/storage/profile-pictures/${req.file.filename}`;
-  console.log('Generated avatarUrl:', avatarUrl);
-  console.log('User ID from token:', req.user.id);
 
   try {
     const updatedUser = await Users.findByIdAndUpdate(
@@ -313,11 +299,9 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
     );
 
     if (!updatedUser) {
-      console.log('User not found for ID:', req.user.id);
       return res.status(404).json({ message: "User not found" });
     }
 
-    console.log('Updated user:', updatedUser);
 
     res.status(200).json({
       message: "Profile picture uploaded successfully",
@@ -332,7 +316,6 @@ const uploadProfilePicture = asyncHandler(async (req, res) => {
 // New controllers with validation
 const getUserPosts = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  console.log("req.params.id in getUserPosts:", userId);
 
   if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
     res.status(400);
@@ -345,7 +328,6 @@ const getUserPosts = asyncHandler(async (req, res) => {
 
 const getUserProducts = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  console.log("req.params.id in getUserProducts:", userId);
 
   if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
     res.status(400);
@@ -358,7 +340,6 @@ const getUserProducts = asyncHandler(async (req, res) => {
 
 const getUserEvents = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  console.log("req.params.id in getUserEvents:", userId);
 
   if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
     res.status(400);
@@ -374,7 +355,6 @@ const getUserEvents = asyncHandler(async (req, res) => {
 //@method: private
 const checkUsername = asyncHandler(async (req, res) => {
   const { username } = req.body;
-  console.log("Received check-username request:", { username }); // Debug log
   if (!username || username.trim() === "") {
     res.status(400);
     throw new Error("Username is required and cannot be empty");
@@ -387,15 +367,12 @@ const checkUsername = asyncHandler(async (req, res) => {
   }
   const currentUser = await Users.findById(req.user.id);
   if (currentUser.username === username) {
-    console.log("Username matches current user:", username);
     return res.status(200).json({ available: true, message: "This is your current username" });
   }
   const existingUser = await Users.findOne({ username });
   if (existingUser) {
-    console.log("Username taken:", username);
     res.status(200).json({ available: false, message: "Username is already taken" }); // Changed to 200
   } else {
-    console.log("Username available:", username);
     res.status(200).json({ available: true, message: "Username is available" });
   }
 });
