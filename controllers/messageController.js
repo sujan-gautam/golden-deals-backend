@@ -7,7 +7,6 @@ const sendMessage = asyncHandler(async (req, res) => {
   const { conversationId, content, product, isAIResponse } = req.body;
   const userId = req.user?.id;
 
-  console.log('Received sendMessage request:', { conversationId, content, product, isAIResponse, userId });
 
   if (!userId) {
     console.error('No user ID in request');
@@ -65,12 +64,10 @@ const sendMessage = asyncHandler(async (req, res) => {
     createdAt: message.createdAt,
   };
 
-  console.log('Message created:', formattedMessage);
 
   const io = req.app.get('io');
   if (io) {
     io.to(`conversation:${conversationId}`).emit('receive_message', formattedMessage);
-    console.log('Emitted receive_message to:', `conversation:${conversationId}`);
   } else {
     console.warn('Socket.IO not initialized');
   }
@@ -82,7 +79,6 @@ const getMessages = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
   const { conversationId } = req.params;
 
-  console.log('Fetching messages for conversation:', conversationId);
 
   if (!userId) {
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
@@ -126,7 +122,6 @@ const getMessages = asyncHandler(async (req, res) => {
     createdAt: message.createdAt,
   }));
 
-  console.log('Returning messages:', formattedMessages.length);
   res.status(200).json(formattedMessages);
 });
 
@@ -134,7 +129,6 @@ const createConversation = asyncHandler(async (req, res) => {
   const { receiverId } = req.body;
   const userId = req.user?.id;
 
-  console.log('Creating conversation:', { userId, receiverId });
 
   if (!userId) {
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
@@ -256,7 +250,6 @@ const markMessagesAsRead = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
   const { conversationId } = req.params;
 
-  console.log('Marking messages as read for conversation:', conversationId);
 
   if (!userId) {
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
