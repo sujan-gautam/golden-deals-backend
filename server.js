@@ -100,7 +100,14 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
-
+app.get('/default-avatar.jpg', (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'default-avatar.jpg');
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      res.status(404).send('Image not found');
+    }
+  });
+});
 
 app.use((err, req, res, next) => {
   console.error('Error:', err);
