@@ -38,8 +38,6 @@ const getEvents = asyncHandler(async (req, res) => {
 const createEvent = asyncHandler(async (req, res) => {
   const user_id = req.user.id;
 
-  console.log('req.body:', req.body);
-  console.log('req.file:', req.file);
 
   const { event_title, event_details, event_date, event_location } = req.body;
 
@@ -221,7 +219,6 @@ const likeEvent = asyncHandler(async (req, res) => {
 // @route   POST /api/events/:id/comment
 // @access  Private
 const commentOnEvent = asyncHandler(async (req, res) => {
-  console.log('Comment on event request:', { body: req.body, user: req.user, eventId: req.params.id });
 
   const { content, parentId, mentions } = req.body;
   if (!content) {
@@ -298,8 +295,6 @@ const commentOnEvent = asyncHandler(async (req, res) => {
 const likeComment = asyncHandler(async (req, res) => {
   const { eventId, commentId } = req.params;
   const userId = req.user.id;
-
-  console.log('Like comment request:', { eventId, commentId, userId });
 
   if (!mongoose.Types.ObjectId.isValid(eventId) || !mongoose.Types.ObjectId.isValid(commentId)) {
     console.log('Invalid eventId or commentId:', { eventId, commentId });
@@ -390,11 +385,6 @@ const shareEvent = asyncHandler(async (req, res) => {
 // @route   GET /api/events/:id
 // @access  Private
 const getEventById = asyncHandler(async (req, res) => {
-  console.log('getEventById request:', {
-    eventId: req.params.id,
-    user: req.user,
-    headers: req.headers,
-  });
 
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     console.log('Invalid event ID:', req.params.id);
@@ -413,11 +403,6 @@ const getEventById = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: 'Event not found' });
     }
 
-    console.log('Event retrieved:', {
-      _id: event._id,
-      user_id: event.user_id,
-      commentsCount: event.comments.length,
-    });
     res.status(200).json({ message: 'Event retrieved successfully', data: event });
   } catch (error) {
     console.error('Error in getEventById:', error);
@@ -467,9 +452,7 @@ const getUsersInterestedInMyEvents = asyncHandler(async (req, res) => {
         (user) => user && user._id && user._id.toString() !== 'undefined' && user.username
       );
       if (event.interested.length !== validInterestedUsers.length) {
-        console.warn(
-          `Filtered out ${event.interested.length - validInterestedUsers.length} invalid users for event ${event._id}`
-        );
+        
       }
 
       return {
