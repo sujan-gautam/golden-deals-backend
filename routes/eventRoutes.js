@@ -14,8 +14,7 @@ const {
   shareEvent,
   likeComment,
   getInterestedEvents,
-  getUsersInterestedInMyEvents,
-  getInterestedUsers
+  getUsersInterestedInMyEvents
 } = require('../controllers/eventController');
 const verifyToken = require('../middleware/verifyTokenHandler');
 const upload = require('../config/multerEvents');
@@ -23,7 +22,6 @@ const upload = require('../config/multerEvents');
 
 router.route('/all')
   .get(getAllEvents); 
-router.get('/:eventId/interested-users', getInterestedUsers);
 
 router.use(verifyToken);
 
