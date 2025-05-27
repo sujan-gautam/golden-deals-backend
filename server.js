@@ -109,6 +109,14 @@ app.get(process.env.DEFAULT_AVATAR_PATH || '/default-avatar.jpg', (req, res) => 
     }
   });
 });
+app.get(process.env.DEFAULT_IMAGE_PATH || '/default-image.jpg', (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'default-image.jpg');
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      res.status(404).send('Image not found');
+    }
+  });
+});
 
 app.use((err, req, res, next) => {
   console.error('Error:', err);
