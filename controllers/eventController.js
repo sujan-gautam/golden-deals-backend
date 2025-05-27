@@ -476,6 +476,41 @@ const getUsersInterestedInMyEvents = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get users interested in an event
+// @route   GET /api/events/:eventId/interested-users
+// @access  Public (or Private, depending on your auth setup)
+const getInterestedUsers = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+
+  // Validate eventId format (MongoDB ObjectId)
+  if (!eventId.match(/^[0-9a-fA-F]{24}$/)) {
+    res.status(400);
+    throw new Error('Invalid event ID');
+  }
+
+  try {
+    // Find the event and populate the interested users
+    const event = await Event.findById(eventId)
+      .select('interested') // Only select the interested field to optimize
+      .populate({
+        path: 'interested',
+        select: '_id username firstname lastname email avatar', // Fields to include
+      });
+
+    if (!event) {
+      res.status(404);
+      throw new Error('Event not found');
+    }
+
+    // Return the array of interested users
+    res.status(200).json(event.interested || []);
+  } catch (error) {
+    // Handle unexpected errors
+    res.status(error.status || 500);
+    throw new Error(error.message || 'Server error while fetching interested users');
+  }
+});
+
 
 module.exports = {
   getAllEvents,
@@ -490,5 +525,6 @@ module.exports = {
   shareEvent,
   likeComment,
   getUsersInterestedInMyEvents,
-  getInterestedEvents
+  getInterestedEvents,
+  getInterestedUsers
 };
