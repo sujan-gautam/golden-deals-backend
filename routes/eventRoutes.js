@@ -23,6 +23,8 @@ const upload = require('../config/multerEvents');
 
 router.route('/all')
   .get(getAllEvents); 
+router.get('/:eventId/interested-users', getInterestedUsers);
+
 router.use(verifyToken);
 
 
@@ -55,6 +57,5 @@ router.route('/:eventId/comments/:commentId/like').post(likeComment);
 router.route('/authored/interested')
   .get(getUsersInterestedInMyEvents);
 
-router.get('/:eventId/interested-users', getInterestedUsers);
 
 module.exports = router;
