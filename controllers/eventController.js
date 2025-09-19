@@ -3,7 +3,7 @@ const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const Event = require('../models/eventModel');
 const Notification = require('../models/notificationModel'); 
-const User = require('../models/Usermodel')
+const User = require('../models/userModel')
 
 // @desc    GET all events
 // @route   GET /api/events/all
