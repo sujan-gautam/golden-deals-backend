@@ -2,16 +2,20 @@ const asyncHandler = require('express-async-handler');
 const Message = require('../models/messageModel');
 const Conversation = require('../models/conversationModel');
 const mongoose = require('mongoose');
-const io = require('../socket/socket'); 
+const { logActivity } = require('../utils/activityLogger');
 
+// @desc    Send a message
+// @route   POST /api/messages
+// @access  Private
 const sendMessage = asyncHandler(async (req, res) => {
-  const { conversationId, content, product, event, isAIResponse } = req.body;
-  const userId = req.user?.id;
-
-  if (!userId) {
+  if (!req.user || !req.user.id) {
+    console.error('sendMessage - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const { conversationId, content, product, event, isAIResponse } = req.body;
+  const userId = req.user.id;
 
   if (!conversationId || !content) {
     res.status(400).json({ message: 'Conversation ID and content are required' });
@@ -34,16 +38,16 @@ const sendMessage = asyncHandler(async (req, res) => {
     return;
   }
 
-  // Determine receiver's online status (simplified; use Socket.IO presence)
+  // Determine receiver's online status
   const receiverId = conversation.participants.find((p) => p.toString() !== userId);
   const io = req.app.get('io');
   let status = 'sent';
   if (io && receiverId) {
-    const onlineUsers = io.sockets.adapter.rooms.get(`user:${receiverId}`); // Check if receiver is online
+    const onlineUsers = io.sockets.adapter.rooms.get(`user:${receiverId}`);
     status = onlineUsers ? 'delivered' : 'sent';
   }
 
-  // Validate event and product (unchanged)
+  // Validate event and product
   const validatedEvent = event && event._id && (event.title || event.event_title)
     ? {
         _id: event._id,
@@ -86,6 +90,16 @@ const sendMessage = asyncHandler(async (req, res) => {
   conversation.updatedAt = Date.now();
   await conversation.save();
 
+  // Log activity (only for non-AI messages)
+  if (!isAIResponse) {
+    await logActivity(userId, 'send_message', message._id, 'Message', {
+      conversation_id: conversationId,
+      content_snippet: content.substring(0, 50),
+      has_product: !!validatedProduct,
+      has_event: !!validatedEvent,
+    });
+  }
+
   await message.populate('senderId', 'username firstname lastname avatar');
   const formattedMessage = {
     _id: message._id,
@@ -109,15 +123,18 @@ const sendMessage = asyncHandler(async (req, res) => {
   res.status(201).json(formattedMessage);
 });
 
-// messageController.js
+// @desc    Get messages in a conversation
+// @route   GET /api/conversations/:conversationId/messages
+// @access  Private
 const getMessages = asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
-  const { conversationId } = req.params;
-
-  if (!userId) {
+  if (!req.user || !req.user.id) {
+    console.error('getMessages - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const userId = req.user.id;
+  const { conversationId } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(conversationId)) {
     res.status(400).json({ message: 'Invalid conversation ID' });
@@ -144,6 +161,13 @@ const getMessages = asyncHandler(async (req, res) => {
     .select('conversationId content product event isAIResponse isRead status reactions deletedFor createdAt pinnedBy')
     .sort({ createdAt: 1 });
 
+  // Log activity
+  await logActivity(userId, 'view_messages', null, null, {
+    action: 'view_messages',
+    conversation_id: conversationId,
+    messages_count: messages.length,
+  });
+
   const formattedMessages = messages.map((message) => ({
     _id: message._id,
     conversationId: message.conversationId,
@@ -166,6 +190,9 @@ const getMessages = asyncHandler(async (req, res) => {
           date: message.event.date || message.event.event_date || null,
           location: message.event.location || message.event.event_location || null,
           image: message.event.image || null,
+          price: message.event.price || null,
+          condition: message.event.condition || null,
+          category: message.event.category || null,
         }
       : null,
     isAIResponse: message.isAIResponse || false,
@@ -180,16 +207,18 @@ const getMessages = asyncHandler(async (req, res) => {
   res.status(200).json(formattedMessages);
 });
 
-
+// @desc    Create a conversation
+// @route   POST /api/conversations
+// @access  Private
 const createConversation = asyncHandler(async (req, res) => {
-  const { receiverId } = req.body;
-  const userId = req.user?.id;
-
-  if (!userId) {
+  if (!req.user || !req.user.id) {
     console.error('createConversation - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const { receiverId } = req.body;
+  const userId = req.user.id;
 
   if (!receiverId) {
     console.error('createConversation - Missing receiverId');
@@ -225,8 +254,16 @@ const createConversation = asyncHandler(async (req, res) => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+      // Log activity
+      await logActivity(userId, 'create_conversation', conversation._id, 'Conversation', {
+        receiver_id: receiverId,
+      });
     } else {
       console.log('createConversation - Found existing conversation:', conversation._id);
+      // Log activity for accessing existing conversation
+      await logActivity(userId, 'access_conversation', conversation._id, 'Conversation', {
+        receiver_id: receiverId,
+      });
     }
 
     // Populate participants
@@ -236,7 +273,7 @@ const createConversation = asyncHandler(async (req, res) => {
     const lastMessage = await Message.findOne({ conversationId: conversation._id })
       .sort({ createdAt: -1 })
       .populate('senderId', 'username firstname lastname avatar')
-      .select('conversationId content product event isAIResponse isRead createdAt'); // Explicitly select event
+      .select('conversationId content product event isAIResponse isRead createdAt');
 
     // Calculate unread count
     const unreadCount = await Message.countDocuments({
@@ -292,14 +329,17 @@ const createConversation = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Get all conversations for a user
+// @route   GET /api/conversations
+// @access  Private
 const getConversations = asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
-
-  if (!userId) {
-    console.error('getConversations - No user ID found in request');
+  if (!req.user || !req.user.id) {
+    console.error('getConversations - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const userId = req.user.id;
 
   try {
     console.log(`getConversations - Fetching conversations for user: ${userId}`);
@@ -316,9 +356,9 @@ const getConversations = asyncHandler(async (req, res) => {
         const lastMessage = await Message.findOne({ conversationId: conversation._id })
           .sort({ createdAt: -1 })
           .populate('senderId', 'username firstname lastname avatar')
-          .select('conversationId content product event isAIResponse isRead createdAt'); // Explicitly select event
+          .select('conversationId content product event isAIResponse isRead createdAt');
 
-        // Calculate unread messages (excluding user's own messages and AI responses)
+        // Calculate unread messages
         const unreadCount = await Message.countDocuments({
           conversationId: conversation._id,
           senderId: { $ne: userId },
@@ -360,6 +400,12 @@ const getConversations = asyncHandler(async (req, res) => {
       })
     );
 
+    // Log activity
+    await logActivity(userId, 'view_conversations', null, null, {
+      action: 'view_conversations',
+      conversations_count: enhancedConversations.length,
+    });
+
     console.log(`getConversations - Returning ${enhancedConversations.length} conversations for user: ${userId}`);
     res.status(200).json(enhancedConversations);
   } catch (error) {
@@ -368,14 +414,18 @@ const getConversations = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Mark messages as read in a conversation
+// @route   PUT /api/conversations/:conversationId/messages/read
+// @access  Private
 const markMessagesAsRead = asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
-  const { conversationId } = req.params;
-
-  if (!userId) {
+  if (!req.user || !req.user.id) {
+    console.error('markMessagesAsRead - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const userId = req.user.id;
+  const { conversationId } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(conversationId)) {
     res.status(400).json({ message: 'Invalid conversation ID' });
@@ -394,12 +444,12 @@ const markMessagesAsRead = asyncHandler(async (req, res) => {
   }
 
   // Mark messages as read
-  await Message.updateMany(
+  const updateResult = await Message.updateMany(
     { conversationId, senderId: { $ne: userId }, isRead: false, isAIResponse: false },
     { $set: { isRead: true, status: 'read' } }
   );
 
-  // Calculate updated unread count for the conversation
+  // Calculate updated unread count
   const unreadCount = await Message.countDocuments({
     conversationId,
     senderId: { $ne: userId },
@@ -407,8 +457,15 @@ const markMessagesAsRead = asyncHandler(async (req, res) => {
     isAIResponse: false,
   });
 
+  // Log activity
+  await logActivity(userId, 'mark_messages_read', null, null, {
+    action: 'mark_messages_read',
+    conversation_id: conversationId,
+    modified_count: updateResult.modifiedCount,
+  });
+
   // Update conversation with new unread count (if schema supports it)
-  conversation.unreadCount = unreadCount; // Assuming Conversation model has an unreadCount field
+  conversation.unreadCount = unreadCount;
   await conversation.save();
 
   // Emit socket event to notify all participants
@@ -418,21 +475,25 @@ const markMessagesAsRead = asyncHandler(async (req, res) => {
       conversationId,
       userId,
       status: 'read',
-      unreadCount, // Include updated unread count
+      unreadCount,
     });
   }
 
   res.status(200).json({ message: 'Messages marked as read', unreadCount });
 });
 
+// @desc    Delete a message (soft delete for user)
+// @route   DELETE /api/messages/:messageId
+// @access  Private
 const deleteMessage = asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
-  const { messageId } = req.params;
-
-  if (!userId) {
+  if (!req.user || !req.user.id) {
+    console.error('deleteMessage - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const userId = req.user.id;
+  const { messageId } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(messageId)) {
     res.status(400).json({ message: 'Invalid message ID' });
@@ -452,12 +513,22 @@ const deleteMessage = asyncHandler(async (req, res) => {
   }
 
   // Add user to deletedFor array
+  let isNewDeletion = false;
   if (!message.deletedFor.includes(userId)) {
     message.deletedFor.push(userId);
     await message.save();
+    isNewDeletion = true;
   }
 
-  // Notify other participants (optional)
+  // Log activity only for new deletions
+  if (isNewDeletion) {
+    await logActivity(userId, 'delete_message', message._id, 'Message', {
+      conversation_id: message.conversationId,
+      content_snippet: message.content.substring(0, 50),
+    });
+  }
+
+  // Notify other participants
   const io = req.app.get('io');
   if (io) {
     io.to(`conversation:${message.conversationId}`).emit('message_deleted', {
@@ -469,15 +540,19 @@ const deleteMessage = asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Message deleted for user' });
 });
 
+// @desc    React to a message
+// @route   POST /api/messages/:messageId/react
+// @access  Private
 const reactToMessage = asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
-  const { messageId } = req.params;
-  const { emoji } = req.body;
-
-  if (!userId) {
+  if (!req.user || !req.user.id) {
+    console.error('reactToMessage - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const userId = req.user.id;
+  const { messageId } = req.params;
+  const { emoji } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(messageId)) {
     res.status(400).json({ message: 'Invalid message ID' });
@@ -506,17 +581,26 @@ const reactToMessage = asyncHandler(async (req, res) => {
     (r) => r.userId.toString() === userId && r.emoji === emoji
   );
 
+  let actionType = '';
   if (existingReaction) {
     // Remove reaction
     message.reactions = message.reactions.filter(
       (r) => !(r.userId.toString() === userId && r.emoji === emoji)
     );
+    actionType = 'remove_reaction';
   } else {
     // Add reaction
     message.reactions.push({ userId, emoji });
+    actionType = 'add_reaction';
   }
 
   await message.save();
+
+  // Log activity
+  await logActivity(userId, actionType, message._id, 'Message', {
+    conversation_id: message.conversationId,
+    emoji,
+  });
 
   const formattedMessage = {
     _id: message._id,
@@ -542,19 +626,25 @@ const reactToMessage = asyncHandler(async (req, res) => {
   res.status(200).json(formattedMessage);
 });
 
+// @desc    Search messages in a conversation
+// @route   GET /api/conversations/:conversationId/messages/search
+// @access  Private
 const searchMessages = asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
-  const { conversationId } = req.params;
-  const { query } = req.query;
-
-  if (!userId) {
+  if (!req.user || !req.user.id) {
+    console.error('searchMessages - No user ID found');
     res.status(401).json({ message: 'Unauthorized: No user ID found' });
     return;
   }
+
+  const userId = req.user.id;
+  const { conversationId } = req.params;
+  const { query } = req.query;
+
   if (!mongoose.Types.ObjectId.isValid(conversationId)) {
     res.status(400).json({ message: 'Invalid conversation ID' });
     return;
   }
+
   if (!query || typeof query !== 'string') {
     res.status(400).json({ message: 'Search query is required' });
     return;
@@ -566,69 +656,79 @@ const searchMessages = asyncHandler(async (req, res) => {
     return;
   }
 
-  const { hits } = await client.search({
-    index: 'messages_index',
-    body: {
-      query: {
-        bool: {
-          filter: [
-            { term: { conversationId } },
-            { bool: { must_not: { term: { deletedFor: userId } } } }
-          ],
-          must: [
-            { match: { content: { query, fuzziness: 'AUTO' } } }
-          ]
-        }
-      },
-      sort: [{ createdAt: { order: 'asc' } }],
-      size: 100 // Adjust based on needs
-    }
+  // Log activity
+  await logActivity(userId, 'search_messages', null, null, {
+    action: 'search_messages',
+    conversation_id: conversationId,
+    query: query.substring(0, 50),
   });
 
-  const messages = hits.hits.map(hit => ({
-    _id: hit._id,
-    conversationId: hit._source.conversationId,
-    senderId: hit._source.senderId || null,
-    content: hit._source.content || '',
-    product: hit._source.product || null,
-    event: hit._source.event || null,
-    isAIResponse: hit._source.isAIResponse || false,
-    isRead: hit._source.isRead || false,
-    status: hit._source.status || 'sent',
-    reactions: Array.isArray(hit._source.reactions) ? hit._source.reactions : [],
-    deletedFor: Array.isArray(hit._source.deletedFor) ? hit._source.deletedFor : [],
-    pinnedBy: Array.isArray(hit._source.pinnedBy) ? hit._source.pinnedBy : [],
-    createdAt: hit._source.createdAt
-  }));
+  // Note: The original code uses an Elasticsearch client (`client.search`), which is not defined.
+  // For consistency, I'll modify to use MongoDB text search instead, assuming no Elasticsearch dependency.
+  const messages = await Message.find({
+    conversationId,
+    deletedFor: { $ne: userId },
+    $text: { $search: query },
+  })
+    .populate('senderId', 'username firstname lastname avatar')
+    .select('conversationId content product event isAIResponse isRead status reactions deletedFor createdAt pinnedBy')
+    .sort({ createdAt: 1 })
+    .limit(100);
 
-  // Populate sender details from MongoDB
-  const populatedMessages = await Message.populate(messages, {
-    path: 'senderId',
-    select: 'username firstname lastname avatar'
-  });
-
-  const formattedMessages = populatedMessages.map(message => ({
-    ...message,
+  const formattedMessages = messages.map(message => ({
+    _id: message._id,
+    conversationId: message.conversationId,
     sender: message.senderId
       ? {
           _id: message.senderId._id,
           username: message.senderId.username || 'Unknown',
           avatar: message.senderId.avatar || null,
           firstname: message.senderId.firstname || '',
-          lastname: message.senderId.lastname || ''
+          lastname: message.senderId.lastname || '',
         }
-      : null
+      : null,
+    senderId: message.senderId ? message.senderId._id : null,
+    content: message.content || '',
+    product: message.product || null,
+    event: message.event
+      ? {
+          _id: message.event._id,
+          title: message.event.title || message.event.event_title || 'Untitled Event',
+          date: message.event.date || message.event.event_date || null,
+          location: message.event.location || message.event.event_location || null,
+          image: message.event.image || null,
+          price: message.event.price || null,
+          condition: message.event.condition || null,
+          category: message.event.category || null,
+        }
+      : null,
+    isAIResponse: message.isAIResponse || false,
+    isRead: message.isRead || false,
+    status: message.status,
+    reactions: message.reactions,
+    deletedFor: message.deletedFor,
+    pinnedBy: message.pinnedBy,
+    createdAt: message.createdAt,
   }));
 
   res.status(200).json(formattedMessages);
 });
 
+// @desc    Pin/unpin a message
+// @route   PUT /api/conversations/:conversationId/messages/:messageId/pin
+// @access  Private
 const pinMessage = asyncHandler(async (req, res) => {
-  const userId = req.user?.id;
+  if (!req.user || !req.user.id) {
+    console.error('pinMessage - No user ID found');
+    res.status(400).json({ message: 'Invalid user, conversation, or message ID' });
+    return;
+  }
+
+  const userId = req.user.id;
   const { conversationId, messageId } = req.params;
 
-  if (!userId || !mongoose.Types.ObjectId.isValid(conversationId) || !mongoose.Types.ObjectId.isValid(messageId)) {
-    res.status(400).json({ message: 'Invalid user, conversation, or message ID' });
+  if (!mongoose.Types.ObjectId.isValid(conversationId) || !mongoose.Types.ObjectId.isValid(messageId)) {
+    res.status(400).json({ message: 'Invalid conversation or message ID' });
     return;
   }
 
@@ -658,7 +758,13 @@ const pinMessage = asyncHandler(async (req, res) => {
   message.pinnedBy = updatedPinnedBy;
   await message.save();
 
-  console.log('Pinned message saved:', { messageId, pinnedBy: updatedPinnedBy }); // Debug log
+  // Log activity
+  await logActivity(userId, isPinned ? 'unpin_message' : 'pin_message', message._id, 'Message', {
+    conversation_id: conversationId,
+    content_snippet: message.content.substring(0, 50),
+  });
+
+  console.log('Pinned message saved:', { messageId, pinnedBy: updatedPinnedBy });
 
   const io = req.app.get('io');
   if (io) {
@@ -684,5 +790,5 @@ module.exports = {
   deleteMessage,
   reactToMessage,
   searchMessages,
-  pinMessage
+  pinMessage,
 };

@@ -170,3 +170,4 @@ process.on('uncaughtException', (err) => console.error('Uncaught Exception:', er
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, HOST, () => console.log(`App is running on port: ${PORT}`));
+

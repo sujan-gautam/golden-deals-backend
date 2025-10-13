@@ -1,9 +1,9 @@
-// controllers/eventController.js
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const Event = require('../models/eventModel');
-const Notification = require('../models/notificationModel'); 
-const User = require('../models/userModel')
+const Notification = require('../models/notificationModel');
+const User = require('../models/userModel');
+const { logActivity } = require('../utils/activityLogger');
 
 // @desc    GET all events
 // @route   GET /api/events/all
@@ -14,10 +14,16 @@ const getAllEvents = async (req, res) => {
       .populate('user_id', 'name avatar') // Populate user details
       .populate('likes', '_id') // Populate likes as user IDs
       .populate('interested', '_id'); // Populate interested as user IDs
+
+    // Log activity only if user is authenticated
+    if (req.user && req.user.id) {
+      await logActivity(req.user.id, 'view_event', null, null, { action: 'view_all_events' });
+    }
+
     res.status(200).json(events);
   } catch (error) {
     console.error('Error fetching events:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -25,11 +31,17 @@ const getAllEvents = async (req, res) => {
 // @route   GET /api/events
 // @access  Private
 const getEvents = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const events = await Event.find({ user_id: req.user.id })
     .populate('user_id', 'name avatar username'); // Added username
   if (events.length === 0) {
-    return res.status(404).json({ message: "No events found." });
+    return res.status(404).json({ message: 'No events found.' });
   }
+
+  await logActivity(req.user.id, 'view_event', null, null, { action: 'view_user_events' });
   res.status(200).json(events);
 });
 
@@ -37,13 +49,15 @@ const getEvents = asyncHandler(async (req, res) => {
 // @route   POST /api/events
 // @access  Private
 const createEvent = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const user_id = req.user.id;
-
-
   const { event_title, event_details, event_date, event_location } = req.body;
 
   if (!event_title || !event_details || !event_date || !event_location) {
-    return res.status(400).json({ message: "Event title, details, date, and location are required!" });
+    return res.status(400).json({ message: 'Event title, details, date, and location are required!' });
   }
 
   const eventData = {
@@ -64,10 +78,15 @@ const createEvent = asyncHandler(async (req, res) => {
 
   const event = await Event.create(eventData);
   const populatedEvent = await Event.findById(event._id)
-  .populate('user_id', 'name avatar username'); // Add username
+    .populate('user_id', 'name avatar username'); // Add username
+
+  await logActivity(user_id, 'create_event', event._id, 'Event', {
+    event_title,
+    has_image: !!req.file,
+  });
 
   res.status(201).json({
-    message: "Event added successfully!",
+    message: 'Event added successfully!',
     data: populatedEvent,
   });
 });
@@ -76,14 +95,18 @@ const createEvent = asyncHandler(async (req, res) => {
 // @route   PUT /api/events/:id
 // @access  Private
 const updateEvent = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const event = await Event.findById(req.params.id);
 
   if (!event) {
-    return res.status(404).json({ message: "Event not found" });
+    return res.status(404).json({ message: 'Event not found' });
   }
 
   if (event.user_id.toString() !== req.user.id) {
-    return res.status(403).json({ message: "Not authorized to update this event" });
+    return res.status(403).json({ message: 'Not authorized to update this event' });
   }
 
   const updateData = {
@@ -101,14 +124,18 @@ const updateEvent = asyncHandler(async (req, res) => {
     };
   }
 
-  const updated = await Event.findByIdAndUpdate(
-    req.params.id,
-    updateData,
-    { new: true }
-  ).populate('user_id', 'name avatar');
+  const updated = await Event.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate(
+    'user_id',
+    'name avatar'
+  );
+
+  await logActivity(req.user.id, 'update_event', event._id, 'Event', {
+    event_title: updateData.event_title || event.event_title,
+    has_image_updated: !!req.file,
+  });
 
   res.status(200).json({
-    message: "Event updated successfully",
+    message: 'Event updated successfully',
     data: updated,
   });
 });
@@ -117,25 +144,37 @@ const updateEvent = asyncHandler(async (req, res) => {
 // @route   DELETE /api/events/:id
 // @access  Private
 const deleteEvent = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const event = await Event.findById(req.params.id);
 
   if (!event) {
-    return res.status(404).json({ message: "Event not found" });
+    return res.status(404).json({ message: 'Event not found' });
   }
 
   if (event.user_id.toString() !== req.user.id) {
-    return res.status(403).json({ message: "Not authorized to delete this event" });
+    return res.status(403).json({ message: 'Not authorized to delete this event' });
   }
+
+  await logActivity(req.user.id, 'delete_event', event._id, 'Event', {
+    event_title: event.event_title,
+  });
 
   await event.deleteOne();
 
-  res.status(200).json({ message: "Event deleted successfully" });
+  res.status(200).json({ message: 'Event deleted successfully' });
 });
 
 // @desc    Mark interest in an event
 // @route   POST /api/events/:id/interested
 // @access  Private
 const interestedInEvent = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const event = await Event.findById(req.params.id);
 
   if (!event) {
@@ -147,8 +186,14 @@ const interestedInEvent = asyncHandler(async (req, res) => {
 
   if (isInterested) {
     event.interested = event.interested.filter((id) => id.toString() !== userId);
+    await logActivity(userId, 'uninterest_event', event._id, 'Event', {
+      event_title: event.event_title,
+    });
   } else {
     event.interested.push(userId);
+    await logActivity(userId, 'interest_event', event._id, 'Event', {
+      event_title: event.event_title,
+    });
   }
 
   await event.save();
@@ -173,10 +218,11 @@ const interestedInEvent = asyncHandler(async (req, res) => {
 // @desc    Like an event
 // @route   POST /api/events/:id/like
 // @access  Private
-// @desc    Like an event
-// @route   POST /api/events/:id/like
-// @access  Private
 const likeEvent = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const event = await Event.findById(req.params.id);
 
   if (!event) {
@@ -188,8 +234,14 @@ const likeEvent = asyncHandler(async (req, res) => {
 
   if (isLiked) {
     event.likes = event.likes.filter((id) => id.toString() !== userId);
+    await logActivity(userId, 'unlike_event', event._id, 'Event', {
+      event_title: event.event_title,
+    });
   } else {
     event.likes.push(userId);
+    await logActivity(userId, 'like_event', event._id, 'Event', {
+      event_title: event.event_title,
+    });
   }
 
   await event.save();
@@ -215,12 +267,14 @@ const likeEvent = asyncHandler(async (req, res) => {
   });
 });
 
-
 // @desc    Comment or reply on an event
 // @route   POST /api/events/:id/comment
 // @access  Private
-// Backend: comment-api.ts
 const commentOnEvent = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const { content, parentId, mentions } = req.body;
   console.log('Received request:', { content, parentId, mentions });
 
@@ -286,6 +340,14 @@ const commentOnEvent = asyncHandler(async (req, res) => {
   await event.save();
   console.log('Saved comment:', comment);
 
+  await logActivity(req.user.id, 'comment_event', event._id, 'Event', {
+    event_title: event.event_title,
+    comment_id: comment._id,
+    content_snippet: content.substring(0, 50),
+    is_reply: !!parentId,
+    mentions_count: mentionIds.length,
+  });
+
   // Notify event owner if not the commenter
   if (event.user_id.toString() !== req.user.id) {
     await Notification.create({
@@ -344,7 +406,7 @@ const commentOnEvent = asyncHandler(async (req, res) => {
     },
     content: newComment.content,
     parentId: newComment.parentId ? newComment.parentId.toString() : null,
-    mentions: newComment.mentions.map((m) => m.username || ''), // Ensure usernames are extracted
+    mentions: newComment.mentions.map((m) => m.username || ''),
     likes: newComment.likes.map((id) => id.toString()),
     createdAt: newComment.createdAt.toISOString(),
   };
@@ -357,6 +419,10 @@ const commentOnEvent = asyncHandler(async (req, res) => {
 // @route   POST /api/events/:eventId/comments/:commentId/like
 // @access  Private
 const likeComment = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const { eventId, commentId } = req.params;
   const userId = req.user.id;
 
@@ -386,8 +452,16 @@ const likeComment = asyncHandler(async (req, res) => {
 
   if (isLiked) {
     comment.likes = comment.likes.filter((id) => id.toString() !== userId);
+    await logActivity(userId, 'unlike_comment_event', event._id, 'Event', {
+      comment_id: commentId,
+      event_title: event.event_title,
+    });
   } else {
     comment.likes.push(userId);
+    await logActivity(userId, 'like_comment_event', event._id, 'Event', {
+      comment_id: commentId,
+      event_title: event.event_title,
+    });
   }
 
   await event.save();
@@ -405,10 +479,7 @@ const likeComment = asyncHandler(async (req, res) => {
   }
 
   // Populate user_id for the comment
-  const updatedEvent = await Event.findById(eventId).populate(
-    'comments.user_id',
-    'name avatar username'
-  );
+  const updatedEvent = await Event.findById(eventId).populate('comments.user_id', 'name avatar username');
   const updatedComment = updatedEvent.comments.id(commentId);
 
   res.status(200).json({
@@ -425,30 +496,40 @@ const likeComment = asyncHandler(async (req, res) => {
   });
 });
 
-
-
 // @desc    Share an event
 // @route   POST /api/events/:id/share
 // @access  Private
 const shareEvent = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const event = await Event.findById(req.params.id);
 
   if (!event) {
-    return res.status(404).json({ message: "Event not found" });
+    return res.status(404).json({ message: 'Event not found' });
   }
 
   event.shares = (event.shares || 0) + 1;
   await event.save();
 
+  await logActivity(req.user.id, 'share_event', event._id, 'Event', {
+    event_title: event.event_title,
+  });
+
   res.status(200).json({
-    message: "Event shared",
+    message: 'Event shared',
     data: event,
   });
 });
+
 // @desc    GET a single event by ID
 // @route   GET /api/events/:id
 // @access  Private
 const getEventById = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
 
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     console.log('Invalid event ID:', req.params.id);
@@ -467,6 +548,10 @@ const getEventById = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: 'Event not found' });
     }
 
+    await logActivity(req.user.id, 'view_event', event._id, 'Event', {
+      event_title: event.event_title,
+    });
+
     res.status(200).json({ message: 'Event retrieved successfully', data: event });
   } catch (error) {
     console.error('Error in getEventById:', error);
@@ -478,6 +563,10 @@ const getEventById = asyncHandler(async (req, res) => {
 // @route   GET /api/events/interested
 // @access  Private
 const getInterestedEvents = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const userId = req.user.id;
 
   const events = await Event.find({ interested: userId })
@@ -485,6 +574,8 @@ const getInterestedEvents = asyncHandler(async (req, res) => {
     .populate('likes', '_id')
     .populate('interested', '_id')
     .populate('comments.user_id', 'name avatar username');
+
+  await logActivity(userId, 'view_event', null, null, { action: 'view_interested_events' });
 
   res.status(200).json({
     message: 'Interested events retrieved successfully',
@@ -495,8 +586,11 @@ const getInterestedEvents = asyncHandler(async (req, res) => {
 // @desc    GET users interested in authored events
 // @route   GET /api/events/authored/interested
 // @access  Private
-
 const getUsersInterestedInMyEvents = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const userId = req.user.id;
 
   const events = await Event.find({ user_id: userId })
@@ -516,13 +610,13 @@ const getUsersInterestedInMyEvents = asyncHandler(async (req, res) => {
         (user) => user && user._id && user._id.toString() !== 'undefined' && user.username
       );
       if (event.interested.length !== validInterestedUsers.length) {
-        
+        console.log(`Filtered out invalid users for event: ${event._id}`);
       }
 
       return {
         event,
         interestedUsers: validInterestedUsers.map((user) => ({
-          _id: user._id.toString(), // Use _id to match User interface
+          _id: user._id.toString(),
           username: user.username || 'unknown',
           name: user.name || `${user.firstname || ''} ${user.lastname || ''}`.trim() || user.username || 'Unknown',
           avatar: user.avatar || '',
@@ -533,6 +627,8 @@ const getUsersInterestedInMyEvents = asyncHandler(async (req, res) => {
       };
     })
     .filter((item) => item !== null); // Remove invalid events
+
+  await logActivity(userId, 'view_event', null, null, { action: 'view_authored_interested_users' });
 
   res.status(200).json({
     message: 'Interested users for authored events retrieved successfully',
@@ -566,6 +662,13 @@ const getInterestedUsers = asyncHandler(async (req, res) => {
       throw new Error('Event not found');
     }
 
+    // Log activity only if user is authenticated
+    if (req.user && req.user.id) {
+      await logActivity(req.user.id, 'view_event', eventId, 'Event', {
+        action: 'view_interested_users',
+      });
+    }
+
     // Return the array of interested users
     res.status(200).json(event.interested || []);
   } catch (error) {
@@ -574,7 +677,6 @@ const getInterestedUsers = asyncHandler(async (req, res) => {
     throw new Error(error.message || 'Server error while fetching interested users');
   }
 });
-
 
 module.exports = {
   getAllEvents,
@@ -590,6 +692,5 @@ module.exports = {
   likeComment,
   getUsersInterestedInMyEvents,
   getInterestedEvents,
-  getInterestedUsers
+  getInterestedUsers,
 };
-  

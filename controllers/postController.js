@@ -3,17 +3,24 @@ const mongoose = require('mongoose');
 const Post = require('../models/postModel');
 const Notification = require('../models/notificationModel');
 const User = require('../models/userModel');
+const { logActivity } = require('../utils/activityLogger');
 
 // @desc    GET all posts
 // @route   GET /api/posts/all
 // @access  Private
 const getAllPosts = asyncHandler(async (req, res) => {
   const posts = await Post.find()
-  .populate('user_id', 'name avatar username') 
-    .populate('comments.user_id', 'name avatar'); 
+    .populate('user_id', 'name avatar username')
+    .populate('comments.user_id', 'name avatar');
   if (posts.length === 0) {
-    return res.status(404).json({ message: "No posts found." });
+    return res.status(404).json({ message: 'No posts found.' });
   }
+
+  // Log activity only if user is authenticated
+  if (req.user && req.user.id) {
+    await logActivity(req.user.id, 'view_post', null, null, { action: 'view_all_posts' });
+  }
+
   res.status(200).json(posts);
 });
 
@@ -21,12 +28,18 @@ const getAllPosts = asyncHandler(async (req, res) => {
 // @route   GET /api/posts
 // @access  Private
 const getPosts = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const posts = await Post.find({ user_id: req.user.id })
     .populate('user_id', 'name avatar')
     .populate('comments.user_id', 'name avatar');
   if (posts.length === 0) {
-    return res.status(404).json({ message: "No posts found." });
+    return res.status(404).json({ message: 'No posts found.' });
   }
+
+  await logActivity(req.user.id, 'view_post', null, null, { action: 'view_user_posts' });
   res.status(200).json(posts);
 });
 
@@ -34,18 +47,21 @@ const getPosts = asyncHandler(async (req, res) => {
 // @route   POST /api/posts
 // @access  Private
 const createPost = asyncHandler(async (req, res) => {
-  const user_id = req.user.id;
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
 
+  const user_id = req.user.id;
 
   let content;
   if (req.is('multipart/form-data') || req.is('application/json')) {
     content = req.body.content;
   } else {
-    return res.status(400).json({ message: "Unsupported Content-Type. Use application/json or multipart/form-data." });
+    return res.status(400).json({ message: 'Unsupported Content-Type. Use application/json or multipart/form-data.' });
   }
 
   if (!content) {
-    return res.status(400).json({ message: "Content is required!" });
+    return res.status(400).json({ message: 'Content is required!' });
   }
 
   const postData = {
@@ -63,11 +79,16 @@ const createPost = asyncHandler(async (req, res) => {
 
   const post = await Post.create(postData);
   const populatedPost = await Post.findById(post._id)
-  .populate('user_id', 'name avatar username') // Add username
+    .populate('user_id', 'name avatar username')
     .populate('comments.user_id', 'name avatar');
 
+  await logActivity(user_id, 'create_post', post._id, 'Post', {
+    content_snippet: content.substring(0, 50),
+    has_image: !!req.file,
+  });
+
   res.status(201).json({
-    message: "Post added successfully!",
+    message: 'Post added successfully!',
     data: populatedPost,
   });
 });
@@ -76,21 +97,31 @@ const createPost = asyncHandler(async (req, res) => {
 // @route   GET /api/posts/:id
 // @access  Private
 const getPostById = asyncHandler(async (req, res) => {
-  const post = await Post.findById(req.params.id);
-
-  if (!post) {
-    console.log(`Post not found for ID: ${req.params.id}`);
-    return res.status(404).json({ message: "Post not found" });
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
   }
 
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    console.log(`Invalid post ID: ${req.params.id}`);
+    return res.status(400).json({ message: 'Invalid post ID' });
+  }
+
+  const post = await Post.findById(req.params.id);
+  if (!post) {
+    console.log(`Post not found for ID: ${req.params.id}`);
+    return res.status(404).json({ message: 'Post not found' });
+  }
 
   const populatedPost = await Post.findById(req.params.id)
     .populate('user_id', 'name avatar username')
-    .populate('comments.user_id', 'name avatar username'); // Add username
+    .populate('comments.user_id', 'name avatar username');
 
+  await logActivity(req.user.id, 'view_post', post._id, 'Post', {
+    content_snippet: post.content.substring(0, 50),
+  });
 
   res.status(200).json({
-    message: "Post retrieved successfully",
+    message: 'Post retrieved successfully',
     data: populatedPost,
   });
 });
@@ -99,14 +130,18 @@ const getPostById = asyncHandler(async (req, res) => {
 // @route   PUT /api/posts/:id
 // @access  Private
 const updatePost = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const post = await Post.findById(req.params.id);
 
   if (!post) {
-    return res.status(404).json({ message: "Post not found" });
+    return res.status(404).json({ message: 'Post not found' });
   }
 
   if (post.user_id.toString() !== req.user.id) {
-    return res.status(403).json({ message: "Not authorized to update this post" });
+    return res.status(403).json({ message: 'Not authorized to update this post' });
   }
 
   const updateData = { content: req.body.content || post.content };
@@ -119,15 +154,17 @@ const updatePost = asyncHandler(async (req, res) => {
     };
   }
 
-  const updated = await Post.findByIdAndUpdate(
-    req.params.id,
-    updateData,
-    { new: true }
-  ).populate('user_id', 'name avatar')
-   .populate('comments.user_id', 'name avatar');
+  const updated = await Post.findByIdAndUpdate(req.params.id, updateData, { new: true })
+    .populate('user_id', 'name avatar')
+    .populate('comments.user_id', 'name avatar');
+
+  await logActivity(req.user.id, 'update_post', post._id, 'Post', {
+    content_snippet: updateData.content.substring(0, 50),
+    has_image_updated: !!req.file,
+  });
 
   res.status(200).json({
-    message: "Post updated successfully",
+    message: 'Post updated successfully',
     data: updated,
   });
 });
@@ -136,25 +173,37 @@ const updatePost = asyncHandler(async (req, res) => {
 // @route   DELETE /api/posts/:id
 // @access  Private
 const deletePost = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const post = await Post.findById(req.params.id);
 
   if (!post) {
-    return res.status(404).json({ message: "Post not found" });
+    return res.status(404).json({ message: 'Post not found' });
   }
 
   if (post.user_id.toString() !== req.user.id) {
-    return res.status(403).json({ message: "Not authorized to delete this post" });
+    return res.status(403).json({ message: 'Not authorized to delete this post' });
   }
+
+  await logActivity(req.user.id, 'delete_post', post._id, 'Post', {
+    content_snippet: post.content.substring(0, 50),
+  });
 
   await post.deleteOne();
 
-  res.status(200).json({ message: "Post deleted successfully" });
+  res.status(200).json({ message: 'Post deleted successfully' });
 });
 
 // @desc    Like a post
 // @route   POST /api/posts/:id/like
 // @access  Private
 const likePost = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const post = await Post.findById(req.params.id);
 
   if (!post) {
@@ -166,8 +215,14 @@ const likePost = asyncHandler(async (req, res) => {
 
   if (isLiked) {
     post.likes = post.likes.filter((id) => id.toString() !== userId);
+    await logActivity(userId, 'unlike_post', post._id, 'Post', {
+      content_snippet: post.content.substring(0, 50),
+    });
   } else {
     post.likes.push(userId);
+    await logActivity(userId, 'like_post', post._id, 'Post', {
+      content_snippet: post.content.substring(0, 50),
+    });
   }
 
   await post.save();
@@ -192,12 +247,14 @@ const likePost = asyncHandler(async (req, res) => {
   });
 });
 
-
 // @desc    Comment on a post
 // @route   POST /api/posts/:id/comment
 // @access  Private
-// postController.js
 const commentOnPost = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const { content, parentId, mentions } = req.body;
   console.log('Received request:', { content, parentId, mentions });
 
@@ -264,6 +321,13 @@ const commentOnPost = asyncHandler(async (req, res) => {
   post.comments.push(comment);
   await post.save();
   console.log('Saved comment:', comment);
+
+  await logActivity(req.user.id, 'comment_post', post._id, 'Post', {
+    comment_id: comment._id,
+    content_snippet: content.substring(0, 50),
+    is_reply: !!parentId,
+    mentions_count: mentionIds.length,
+  });
 
   // Notify post owner (if not the commenter)
   if (post.user_id.toString() !== req.user.id) {
@@ -336,12 +400,14 @@ const commentOnPost = asyncHandler(async (req, res) => {
   res.status(201).json({ message: 'Comment added successfully', data: formattedComment });
 });
 
-
-
 // @desc    Like a comment on a post
 // @route   POST /api/posts/:postId/comments/:commentId/like
 // @access  Private
 const likeComment = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
+  }
+
   const { postId, commentId } = req.params;
   const userId = req.user.id;
 
@@ -371,8 +437,16 @@ const likeComment = asyncHandler(async (req, res) => {
 
   if (isLiked) {
     comment.likes = comment.likes.filter((id) => id.toString() !== userId);
+    await logActivity(userId, 'unlike_comment_post', post._id, 'Post', {
+      comment_id: commentId,
+      content_snippet: comment.content.substring(0, 50),
+    });
   } else {
     comment.likes.push(userId);
+    await logActivity(userId, 'like_comment_post', post._id, 'Post', {
+      comment_id: commentId,
+      content_snippet: comment.content.substring(0, 50),
+    });
   }
 
   await post.save();
@@ -410,24 +484,30 @@ const likeComment = asyncHandler(async (req, res) => {
   });
 });
 
-
-
 // @desc    Share a post (increment shares count)
 // @route   POST /api/posts/:id/share
 // @access  Private
 const sharePost = asyncHandler(async (req, res) => {
-  const post = await Post.findById(req.params.id);
-  if (!post) {
-    return res.status(404).json({ message: "Post not found" });
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: 'Unauthorized: No user authenticated' });
   }
 
-  // Increment the shares count 
+  const post = await Post.findById(req.params.id);
+  if (!post) {
+    return res.status(404).json({ message: 'Post not found' });
+  }
+
+  // Increment the shares count
   post.shares = (post.shares || 0) + 1;
   await post.save();
 
+  await logActivity(req.user.id, 'share_post', post._id, 'Post', {
+    content_snippet: post.content.substring(0, 50),
+  });
+
   const populatedPost = await Post.findById(post._id).populate('user_id', 'name avatar username');
   res.status(200).json({
-    message: "Post shared successfully",
+    message: 'Post shared successfully',
     data: populatedPost,
   });
 });

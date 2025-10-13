@@ -27,7 +27,7 @@ router.use(verifyToken);
 
 
 router.route('/')
-  .get(getEvents)
+  .get(getAllEvents)
   .post(upload.single('image'), createEvent);
 
 router.route('/interested')

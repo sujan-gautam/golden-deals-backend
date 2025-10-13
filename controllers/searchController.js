@@ -4,11 +4,17 @@ const User = require('../models/userModel');
 const Post = require('../models/postModel');
 const Product = require('../models/productModel');
 const Event = require('../models/eventModel');
+const { logActivity } = require('../utils/activityLogger');
 
 // @desc    Search across all entities (users, posts, products, events)
 // @route   GET /api/search?q=:query
 // @access  Private
-const searchAll = async (req, res) => {
+const searchAll = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   try {
     const query = req.query.q?.trim();
     if (!query) {
@@ -51,6 +57,17 @@ const searchAll = async (req, res) => {
       ],
     }).populate('user_id', 'username avatar');
 
+    // Log activity
+    await logActivity(req.user.id, 'search_all', null, null, {
+      query: query.substring(0, 50), // Limit query length for logging
+      results_count: {
+        users: users.length,
+        posts: posts.length,
+        products: products.length,
+        events: events.length,
+      },
+    });
+
     res.status(200).json({
       users: users || [],
       posts: posts || [],
@@ -67,12 +84,17 @@ const searchAll = async (req, res) => {
       message: 'Server error during search',
     });
   }
-};
-  
+});
+
 // @desc    Advanced search with filters
 // @route   POST /api/search/advanced
 // @access  Private
-const advancedSearch = async (req, res) => {
+const advancedSearch = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   try {
     const {
       query,
@@ -145,6 +167,28 @@ const advancedSearch = async (req, res) => {
       }).populate('user_id', 'username avatar');
     }
 
+    // Log activity
+    await logActivity(req.user.id, 'advanced_search', null, null, {
+      query: query.substring(0, 50),
+      type: type || 'all',
+      filters: {
+        userId: userId || null,
+        minPrice: minPrice || null,
+        maxPrice: maxPrice || null,
+        category: category || null,
+        condition: condition || null,
+        eventDateFrom: eventDateFrom || null,
+        eventDateTo: eventDateTo || null,
+        location: location || null,
+      },
+      results_count: {
+        users: users.length,
+        posts: posts.length,
+        products: products.length,
+        events: events.length,
+      },
+    });
+
     res.status(200).json({
       users: users || [],
       posts: posts || [],
@@ -161,28 +205,32 @@ const advancedSearch = async (req, res) => {
       message: 'Server error during advanced search',
     });
   }
-};
+});
 
-//  NEW CONTROLLERS 
 // @desc    Get users with more than 1 post/product/event
 // @route   GET /api/users/active-creators
 // @access  Private
 const getActiveCreators = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   try {
     // Get all users
     const allUsers = await User.find().select('_id username firstname lastname avatar bio');
 
     // Get counts for each content type
     const postCounts = await Post.aggregate([
-      { $group: { _id: '$user_id', count: { $sum: 1 } } }
+      { $group: { _id: '$user_id', count: { $sum: 1 } } },
     ]);
 
     const productCounts = await Product.aggregate([
-      { $group: { _id: '$user_id', count: { $sum: 1 } } }
+      { $group: { _id: '$user_id', count: { $sum: 1 } } },
     ]);
 
     const eventCounts = await Event.aggregate([
-      { $group: { _id: '$user_id', count: { $sum: 1 } } }
+      { $group: { _id: '$user_id', count: { $sum: 1 } } },
     ]);
 
     // Convert counts to maps for easy lookup
@@ -208,27 +256,32 @@ const getActiveCreators = asyncHandler(async (req, res) => {
         postCount: postCountMap.get(userId) || 0,
         productCount: productCountMap.get(userId) || 0,
         eventCount: eventCountMap.get(userId) || 0,
-        totalContent: (postCountMap.get(userId) || 0) + 
-                     (productCountMap.get(userId) || 0) + 
-                     (eventCountMap.get(userId) || 0)
+        totalContent: (postCountMap.get(userId) || 0) +
+                      (productCountMap.get(userId) || 0) +
+                      (eventCountMap.get(userId) || 0),
       };
     });
 
     // Sort by total content count (descending)
     creatorsWithCounts.sort((a, b) => b.totalContent - a.totalContent);
 
+    // Log activity
+    await logActivity(req.user.id, 'view_active_creators', null, null, {
+      action: 'view_active_creators',
+      creators_count: creatorsWithCounts.length,
+    });
+
     res.status(200).json({
       success: true,
       count: creatorsWithCounts.length,
-      data: creatorsWithCounts
+      data: creatorsWithCounts,
     });
-
   } catch (error) {
     console.error('Error fetching active creators:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while fetching active creators',
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -237,19 +290,24 @@ const getActiveCreators = asyncHandler(async (req, res) => {
 // @route   GET /api/users/with-content-counts
 // @access  Private
 const getUsersWithContentCounts = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   try {
     const allUsers = await User.find().select('_id username firstname lastname avatar bio');
 
     const postCounts = await Post.aggregate([
-      { $group: { _id: '$user_id', count: { $sum: 1 } } }
+      { $group: { _id: '$user_id', count: { $sum: 1 } } },
     ]);
 
     const productCounts = await Product.aggregate([
-      { $group: { _id: '$user_id', count: { $sum: 1 } } }
+      { $group: { _id: '$user_id', count: { $sum: 1 } } },
     ]);
 
     const eventCounts = await Event.aggregate([
-      { $group: { _id: '$user_id', count: { $sum: 1 } } }
+      { $group: { _id: '$user_id', count: { $sum: 1 } } },
     ]);
 
     const postCountMap = new Map(postCounts.map(item => [item._id.toString(), item.count]));
@@ -267,25 +325,30 @@ const getUsersWithContentCounts = asyncHandler(async (req, res) => {
         postCount,
         productCount,
         eventCount,
-        totalContent: postCount + productCount + eventCount
+        totalContent: postCount + productCount + eventCount,
       };
     });
 
     // Sort by total content count (descending)
     usersWithCounts.sort((a, b) => b.totalContent - a.totalContent);
 
+    // Log activity
+    await logActivity(req.user.id, 'view_users_with_content', null, null, {
+      action: 'view_users_with_content',
+      users_count: usersWithCounts.length,
+    });
+
     res.status(200).json({
       success: true,
       count: usersWithCounts.length,
-      data: usersWithCounts
+      data: usersWithCounts,
     });
-
   } catch (error) {
     console.error('Error fetching users with content counts:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while fetching users with content counts',
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -294,11 +357,21 @@ const getUsersWithContentCounts = asyncHandler(async (req, res) => {
 // @route   GET /api/search/mentioned-user?query=:query
 // @access  Private
 const searchUsersForMentions = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   try {
     const { query } = req.query;
 
     if (!query?.trim()) {
-      return res.status(200).json([]); // Return empty array for empty query
+      // Log activity even for empty query
+      await logActivity(req.user.id, 'search_users_for_mentions', null, null, {
+        query: '',
+        results_count: 0,
+      });
+      return res.status(200).json([]);
     }
 
     // Create regex for partial matching (case-insensitive, starts with query)
@@ -308,8 +381,14 @@ const searchUsersForMentions = asyncHandler(async (req, res) => {
     const users = await User.find({
       username: regexQuery,
     })
-      .select('_id username avatar') // Include avatar field
+      .select('_id username avatar')
       .limit(10);
+
+    // Log activity
+    await logActivity(req.user.id, 'search_users_for_mentions', null, null, {
+      query: query.substring(0, 50),
+      results_count: users.length,
+    });
 
     res.status(200).json(users);
   } catch (error) {
@@ -327,5 +406,5 @@ module.exports = {
   advancedSearch,
   getUsersWithContentCounts,
   getActiveCreators,
-  searchUsersForMentions
+  searchUsersForMentions,
 };

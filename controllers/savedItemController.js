@@ -4,19 +4,20 @@ const SavedItem = require('../models/savedItemModel');
 const Post = require('../models/postModel');
 const Product = require('../models/productModel');
 const Event = require('../models/eventModel');
+const { logActivity } = require('../utils/activityLogger');
 
 // @desc    Save an item (post, product, or event)
 // @route   POST /api/saved-items
 // @access  Private
 const saveItem = asyncHandler(async (req, res) => {
-  const { item_type, item_id } = req.body;
-
   // Validate user
-  if (!req.user?.id) {
+  if (!req.user || !req.user.id) {
     console.error('No user ID found in request');
     return res.status(401).json({ message: 'Not authorized, user not found' });
   }
   const user_id = req.user.id;
+
+  const { item_type, item_id } = req.body;
 
   // Validate item_type
   if (!['post', 'product', 'event'].includes(item_type)) {
@@ -30,12 +31,16 @@ const saveItem = asyncHandler(async (req, res) => {
 
   // Check if the item exists
   let item;
+  let itemTitle = '';
   if (item_type === 'post') {
     item = await Post.findById(item_id);
+    itemTitle = item ? item.content.substring(0, 50) : '';
   } else if (item_type === 'product') {
     item = await Product.findById(item_id);
+    itemTitle = item ? item.title : '';
   } else if (item_type === 'event') {
     item = await Event.findById(item_id);
+    itemTitle = item ? item.event_title : '';
   }
 
   if (!item) {
@@ -51,13 +56,18 @@ const saveItem = asyncHandler(async (req, res) => {
   // Save the item
   const savedItem = await SavedItem.create({ user_id, item_type, item_id });
 
+  // Log activity
+  await logActivity(user_id, `save_${item_type}`, item_id, item_type.charAt(0).toUpperCase() + item_type.slice(1), {
+    item_title: itemTitle,
+  });
+
   // Manually populate item_id
   let populatedItem;
   try {
     const modelMap = {
       post: Post,
       product: Product,
-      event: Event
+      event: Event,
     };
     const Model = modelMap[item_type];
     if (!Model) {
@@ -67,17 +77,16 @@ const saveItem = asyncHandler(async (req, res) => {
     populatedItem = await SavedItem.findById(savedItem._id).populate({
       path: 'item_id',
       model: Model,
-      populate: { path: 'user_id', select: 'name avatar username' }
+      populate: { path: 'user_id', select: 'name avatar username' },
     });
   } catch (popError) {
     console.error(`Error populating saved item ${savedItem._id}:`, popError);
-    // Return without population if it fails
     populatedItem = savedItem;
   }
 
   res.status(201).json({
     message: 'Item saved successfully',
-    data: populatedItem || savedItem
+    data: populatedItem || savedItem,
   });
 });
 
@@ -85,6 +94,11 @@ const saveItem = asyncHandler(async (req, res) => {
 // @route   DELETE /api/saved-items/:id
 // @access  Private
 const unsaveItem = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   const savedItem = await SavedItem.findById(req.params.id);
 
   if (!savedItem) {
@@ -95,6 +109,32 @@ const unsaveItem = asyncHandler(async (req, res) => {
     return res.status(403).json({ message: 'Not authorized to unsave this item' });
   }
 
+  // Get item title for logging
+  let itemTitle = '';
+  try {
+    const modelMap = {
+      post: Post,
+      product: Product,
+      event: Event,
+    };
+    const Model = modelMap[savedItem.item_type];
+    if (Model) {
+      const item = await Model.findById(savedItem.item_id);
+      if (item) {
+        itemTitle = savedItem.item_type === 'post' ? item.content.substring(0, 50) :
+                    savedItem.item_type === 'product' ? item.title :
+                    savedItem.item_type === 'event' ? item.event_title : '';
+      }
+    }
+  } catch (error) {
+    console.error(`Error fetching item title for unsave ${savedItem.item_id}:`, error);
+  }
+
+  // Log activity
+  await logActivity(req.user.id, `unsave_${savedItem.item_type}`, savedItem.item_id, savedItem.item_type.charAt(0).toUpperCase() + savedItem.item_type.slice(1), {
+    item_title: itemTitle,
+  });
+
   await savedItem.deleteOne();
 
   res.status(200).json({ message: 'Item unsaved successfully' });
@@ -104,6 +144,11 @@ const unsaveItem = asyncHandler(async (req, res) => {
 // @route   GET /api/saved-items
 // @access  Private
 const getSavedItems = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   try {
     const savedItems = await SavedItem.find({ user_id: req.user.id });
 
@@ -114,7 +159,7 @@ const getSavedItems = asyncHandler(async (req, res) => {
           const modelMap = {
             post: Post,
             product: Product,
-            event: Event
+            event: Event,
           };
           const Model = modelMap[savedItem.item_type];
           if (!Model) {
@@ -142,6 +187,12 @@ const getSavedItems = asyncHandler(async (req, res) => {
     );
 
     const validItems = formattedItems.filter(item => item !== null);
+
+    // Log activity
+    await logActivity(req.user.id, 'view_saved_items', null, null, {
+      action: 'view_saved_items',
+      item_count: validItems.length,
+    });
 
     res.status(200).json({
       message: 'Saved items retrieved successfully',

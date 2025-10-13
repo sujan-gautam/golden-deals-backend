@@ -1,7 +1,10 @@
 const asyncHandler = require('express-async-handler');
 const Story = require('../models/storiesModel');
+const { logActivity } = require('../utils/activityLogger');
 
-// Get all stories (for all users)
+// @desc    Get all stories (for all users)
+// @route   GET /api/stories
+// @access  Private
 const getAllStories = asyncHandler(async (req, res) => {
   const stories = await Story.find()
     .populate('user_id', 'name avatar username')
@@ -9,11 +12,26 @@ const getAllStories = asyncHandler(async (req, res) => {
   if (!stories.length) {
     return res.status(404).json({ message: 'No stories found.' });
   }
+
+  // Log activity only if user is authenticated
+  if (req.user && req.user.id) {
+    await logActivity(req.user.id, 'view_stories', null, null, {
+      action: 'view_all_stories',
+      stories_count: stories.length,
+    });
+  }
+
   res.status(200).json(stories);
 });
 
-// Create a new story
+// @desc    Create a new story
+// @route   POST /api/stories
+// @access  Private
 const createStory = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
 
   const user_id = req.user.id;
   const { text, textColor } = req.body;
@@ -40,12 +58,26 @@ const createStory = asyncHandler(async (req, res) => {
     return res.status(500).json({ message: 'Failed to save story' });
   }
 
+  // Log activity
+  await logActivity(user_id, 'create_story', story._id, 'Story', {
+    text_snippet: story.text ? story.text.substring(0, 50) : '',
+    has_image: !!req.file,
+    text_color: story.textColor,
+  });
+
   const populatedStory = await Story.findById(story._id).populate('user_id', 'name avatar username');
   res.status(201).json(populatedStory);
 });
 
-// Edit a story
+// @desc    Edit a story
+// @route   PUT /api/stories/:id
+// @access  Private
 const editStory = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   const story = await Story.findById(req.params.id);
 
   if (!story) {
@@ -64,17 +96,30 @@ const editStory = asyncHandler(async (req, res) => {
   story.updatedAt = Date.now();
 
   const updatedStory = await story.save();
+
+  // Log activity
+  await logActivity(req.user.id, 'edit_story', story._id, 'Story', {
+    text_snippet: updatedStory.text ? updatedStory.text.substring(0, 50) : '',
+    text_color: updatedStory.textColor,
+  });
+
   const populatedStory = await Story.findById(updatedStory._id).populate(
     'user_id',
-    'username avatar'
+    'name avatar username'
   );
 
   res.status(200).json(populatedStory);
 });
 
-
-// Delete a story
+// @desc    Delete a story
+// @route   DELETE /api/stories/:id
+// @access  Private
 const deleteStory = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   const story = await Story.findById(req.params.id);
 
   if (!story) {
@@ -85,12 +130,24 @@ const deleteStory = asyncHandler(async (req, res) => {
     return res.status(403).json({ message: 'Not authorized to delete this story' });
   }
 
+  // Log activity
+  await logActivity(req.user.id, 'delete_story', story._id, 'Story', {
+    text_snippet: story.text ? story.text.substring(0, 50) : '',
+  });
+
   await story.deleteOne();
   res.status(200).json({ message: 'Story deleted successfully' });
 });
 
-// View a story (track views)
+// @desc    View a story (track views)
+// @route   POST /api/stories/:id/view
+// @access  Private
 const viewStory = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    console.error('No user ID found in request');
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+
   const story = await Story.findById(req.params.id);
 
   if (!story) {
@@ -98,9 +155,19 @@ const viewStory = asyncHandler(async (req, res) => {
   }
 
   const userId = req.user.id;
+  let isNewView = false;
   if (!story.views.includes(userId)) {
     story.views.push(userId);
     await story.save();
+    isNewView = true;
+  }
+
+  // Log activity only for new views
+  if (isNewView) {
+    await logActivity(userId, 'view_story', story._id, 'Story', {
+      text_snippet: story.text ? story.text.substring(0, 50) : '',
+      view_count: story.views.length,
+    });
   }
 
   const populatedStory = await Story.findById(story._id).populate(
@@ -117,4 +184,3 @@ module.exports = {
   deleteStory,
   viewStory,
 };
-

@@ -1,0 +1,23 @@
+config:
+  target: "http://localhost:5000"   # your server from server.js
+  phases:
+    - duration: 30
+      arrivalRate: 2    # warmup: 2 new VUs/sec for 30s
+    - duration: 60
+      arrivalRate: 10   # ramp: 10 new VUs/sec for 60s
+    - duration: 60
+      arrivalRate: 50   # stress: 50 new VUs/sec for 60s
+  defaults:
+    headers:
+      Content-Type: "application/json"
+scenarios:
+  - name: "login-post"
+    flow:
+      - post:
+          url: "/api/users/login"
+          json:
+            email: "test@example.com"   # <-- replace with a real test user
+            password: "Password123"     # <-- replace with a real test password
+          capture:
+            - json: "$.token"
+              as: "authToken"
